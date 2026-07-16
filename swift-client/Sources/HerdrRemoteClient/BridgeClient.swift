@@ -138,7 +138,7 @@ public actor BridgeClient {
       emit(.connectionState(.authenticating))
       receive(from: source)
       Task { await authenticate(on: source) }
-    case .failed(let error):
+    case .waiting(let error), .failed(let error):
       disconnected(source, error: .transport(error.localizedDescription))
     case .cancelled:
       disconnected(source, error: .transport("connection closed"))

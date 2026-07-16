@@ -49,8 +49,9 @@ The reusable Swift package must:
 
 The first phone build adds:
 
-- a SwiftUI agent strip and selected-agent view;
-- the universal keypad and haptics;
+- a four-column SwiftUI agent-key grid with clear selected-agent identity;
+- a connected D-pad, Enter, Tab, and haptics;
+- active-looking Accept, Deny, and Voice placeholders that provide local press feedback without sending remote input;
 - connection state, automatic reconnect, and disabled controls when unavailable;
 - manual bridge address and token entry with Keychain storage.
 
@@ -69,7 +70,8 @@ The complete MVP additionally includes typed instructions and hold-to-talk local
 
 ### Input
 
-- Keep arrows, Enter, Escape, Tab, and Space available for every current agent.
+- Keep arrows, Enter, and Tab on the primary phone control bank for every current agent.
+- Continue supporting Escape and Space in protocol v1 even though the first phone layout does not expose dedicated keys for them.
 - Support printable Unicode text with and without a final Enter.
 - Include the selected agent ID in every input request.
 - Acknowledge input only after Herdr accepts it.
@@ -97,6 +99,7 @@ The complete MVP additionally includes typed instructions and hold-to-talk local
 - QR pairing, per-device revocation, APNs, TestFlight, and Apple Watch
 - multiple Herdr machines or public-internet exposure
 - Herdr plugin packaging or launchd service management
+- direct Codex or Claude Code approval integration before the bridge exposes structured request type and choice data
 - arbitrary control-key chords such as Control+C
 
 ## Dependencies and risks
@@ -115,3 +118,4 @@ The complete MVP additionally includes typed instructions and hold-to-talk local
 - Agent selection is client-local; every input request carries its target agent ID.
 - Protocol v1 was revised in place because no released client depended on its earlier terminal-streaming draft.
 - The shared Swift package targets iOS 18 and newer.
+- Dedicated Accept, Deny, and Voice keys remain local-only placeholders until their integrations have enough structured data to send safe remote input.

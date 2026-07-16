@@ -359,6 +359,31 @@ private func withTimeout<T: Sendable>(
   bridge.stop()
 }
 
+@Test func unavailableEndpointStartsBoundedReconnect() async throws {
+  let bridge = try FakeBridge()
+  let port = try await bridge.start()
+  bridge.stop()
+  try await Task.sleep(for: .milliseconds(100))
+
+  let client = try BridgeClient(
+    host: "127.0.0.1",
+    port: port,
+    token: String(repeating: "a", count: 64)
+  )
+  let reconnectAttempt = Task { () throws -> Int in
+    for await event in client.events {
+      if case .connectionState(.reconnecting(let attempt)) = event {
+        return attempt
+      }
+    }
+    throw TestFailure.timeout
+  }
+
+  await client.start()
+  #expect(try await withTimeout { try await reconnectAttempt.value } == 1)
+  await client.stop()
+}
+
 @Test func invalidConfigurationAndTextFailLocally() async throws {
   do {
     _ = try BridgeClient(host: "127.0.0.1", token: "not-a-token")

@@ -11,7 +11,7 @@ A task is `Done` only when its acceptance evidence is recorded here. A phase is 
 |---|---|---|
 | 0. Herdr API validation | Done | Disposable prompt controlled through the bridge |
 | 1. Rust connector vertical slice | Done | Local and Tailscale acceptance checks passed |
-| 2. SwiftUI dashboard and keypad | In progress | Shared Swift networking package done; Xcode UI pending |
+| 2. SwiftUI dashboard and keypad | In progress | SwiftUI dashboard and keypad simulator-verified; physical iPhone acceptance pending |
 | 3. Typed and voice interaction | Not started | Starts after keypad loop is reliable |
 | 4. Pairing and lifecycle | Not started | Starts before wider beta |
 | 5. Hardening | Not started | Starts after daily-use validation |
@@ -61,12 +61,13 @@ Exit criterion: the authenticated probe lists current agents and safely operates
 
 ## Phase 2: SwiftUI dashboard and keypad
 
-- [ ] Create the native SwiftUI project on the Xcode-equipped MacBook.
+- [x] Create the native SwiftUI project on the Xcode-equipped MacBook.
 - [x] Implement protocol v1 models and `Network.framework` connection as an iOS 18+ Swift package.
-- [ ] Add manual host/token configuration and Keychain storage.
+- [x] Add manual host/token configuration and Keychain storage.
 - [x] Add connection state and bounded automatic reconnect to the Swift package.
-- [ ] Add horizontally scrolling agents, local selection, and clear selected-agent identity.
-- [ ] Add arrows, Enter, Escape, Tab, Space, haptics, and disconnected-state disabling.
+- [x] Add a four-column square agent-key grid, local selection, and clear selected-agent identity.
+- [x] Add a connected D-pad, Enter, Tab, haptics, and disconnected-state disabling.
+- [x] Add active-looking Accept, Deny, Voice, and blank-agent placeholders with local press feedback only.
 - [ ] Verify at least three simultaneous agents on a physical iPhone.
 
 Exit criterion: command approvals and question pickers can be completed from the physical iPhone while its target screen remains visible elsewhere.
@@ -113,6 +114,9 @@ Exit criterion: the app is reliable enough for repeated daily supervision.
 | 2026-07-15 | Revise protocol v1 in place | No released client depends on the earlier terminal-streaming draft |
 | 2026-07-15 | Target iOS 18+ in the shared Swift package | Matches the chosen compatibility floor and modern Swift concurrency |
 | 2026-07-15 | Use typed Swift wire messages and a five-second request timeout | Invalid message shapes become unrepresentable and stalled responses cannot hang the app indefinitely |
+| 2026-07-15 | Use a neutral-white modern hardware style for the iPhone keypad | Large sculpted square keys, circular recessed dishes, and a connected D-pad make the remote tactile without copying retro screws, dials, textures, or decoration |
+| 2026-07-15 | Keep Accept, Deny, and Voice local-only until their integrations are structured | The placeholders can demonstrate the final interaction without blindly sending input to the wrong prompt |
+| 2026-07-15 | Keep bridge port 8765 fixed in the first iPhone setup screen | Manual host and token are sufficient for the current single-owner Tailscale workflow |
 
 ## Verification evidence
 
@@ -127,6 +131,10 @@ Exit criterion: the app is reliable enough for repeated daily supervision.
 | 2026-07-15 | Agent state | Pass | Idle-to-blocked snapshot arrived automatically and pane removal emitted a reduced snapshot |
 | 2026-07-15 | Tailscale endpoint | Pass | Default bind selected the machine's private Tailscale IPv4 address; authenticated ping, list, and text input succeeded |
 | 2026-07-15 | Herdr recovery | Pass | A connected probe received `unavailable`, then `connected` and a fresh snapshot when the configured socket appeared |
-| 2026-07-15 | Swift package tests | Pass | 15 tests covered framing, typed envelopes, validation, auth, input, errors, reconnect, cancellation, request timeout, and live interoperability |
+| 2026-07-15 | Swift package tests | Pass | 16 tests covered framing, typed envelopes, validation, auth, input, errors, reconnect, cancellation, request timeout, and live interoperability |
 | 2026-07-15 | Swift-to-Rust live smoke | Pass | Swift authenticated to the localhost Rust bridge, received current Herdr agents, and completed ping without sending agent input |
 | 2026-07-15 | Post-audit connector regression | Pass | Updated Rust list/ping and Swift live smoke passed against the real Herdr 0.7.4 socket; no agent input was sent |
+| 2026-07-15 | iOS simulator build and app-model test | Pass | Xcode 26.4.1 built the iOS 18 app for an iPhone 17 Pro Max simulator; selection, blocked-first ordering, and keypad gating test passed |
+| 2026-07-15 | iOS visual and accessibility review | Pass | The four-column grid, rounded D-pad, and centered Voice key rendered without clipping on iPhone 17e and 17 Pro Max at standard and large content sizes; lighter shadows, VoiceOver names, and local-only placeholder feedback were verified |
+| 2026-07-15 | iOS-to-Rust live simulator smoke | Pass | The app authenticated with a disposable simulator credential, displayed current agents from the real Herdr socket, and enabled the D-pad, Enter, and Tab after explicit selection; placeholder taps remained local and no test input was sent |
+| 2026-07-15 | Unavailable-endpoint reconnect regression | Pass | Swift client now treats `Network.framework` waiting as a transport interruption; 16 package tests cover the bounded reconnect path |
