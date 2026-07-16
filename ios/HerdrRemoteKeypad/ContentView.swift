@@ -312,6 +312,8 @@ private struct ControlBank: View {
             action: tapPlaceholder
           )
           .frame(width: cell, height: cell)
+          RemoteKeyButton(key: .escape, enabled: enabled, send: send)
+          RemoteKeyButton(key: .shiftTab, enabled: enabled, send: send)
           RemoteKeyButton(key: .enter, enabled: enabled, send: send)
           RemoteKeyButton(key: .tab, enabled: enabled, send: send)
         }
@@ -901,7 +903,7 @@ extension RemoteKey {
     case .arrowRight: "arrow.right"
     case .enter: "arrow.turn.down.left"
     case .escape: "escape"
-    case .tab: "arrow.right.to.line"
+    case .tab, .shiftTab: "arrow.right.to.line"
     case .space: "space"
     }
   }
@@ -909,8 +911,10 @@ extension RemoteKey {
   fileprivate var caption: String? {
     switch self {
     case .enter: "ENTER"
+    case .escape: "ESC"
     case .tab: "TAB"
-    case .escape, .space, .arrowUp, .arrowDown, .arrowLeft, .arrowRight: nil
+    case .shiftTab: "⇧ TAB"
+    case .space, .arrowUp, .arrowDown, .arrowLeft, .arrowRight: nil
     }
   }
 
@@ -923,6 +927,7 @@ extension RemoteKey {
     case .enter: "Enter"
     case .escape: "Escape"
     case .tab: "Tab"
+    case .shiftTab: "Shift Tab"
     case .space: "Space"
     }
   }

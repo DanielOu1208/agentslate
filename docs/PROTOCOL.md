@@ -50,7 +50,7 @@ Send an allowlisted key to a current agent:
 {"version":1,"id":"4","type":"send_key","agent_id":"w1:p1","key":"arrow_down"}
 ```
 
-Allowed bridge key names are `arrow_up`, `arrow_down`, `arrow_left`, `arrow_right`, `enter`, `escape`, `tab`, and `space`.
+Allowed bridge key names are `arrow_up`, `arrow_down`, `arrow_left`, `arrow_right`, `enter`, `escape`, `tab`, `shift_tab`, and `space`.
 
 Send printable Unicode text, optionally followed atomically by Enter:
 

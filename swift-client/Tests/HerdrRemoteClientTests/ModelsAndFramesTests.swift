@@ -22,12 +22,12 @@ import Testing
 
 @Test func typedWireRequestEncodesOnlyItsRequiredFields() throws {
   let data = try JSONEncoder().encode(
-    WireRequest(id: "1", payload: .sendKey(agentID: "w1:p1", key: .arrowDown)))
+    WireRequest(id: "1", payload: .sendKey(agentID: "w1:p1", key: .shiftTab)))
   let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
   #expect(object["version"] as? Int == 1)
   #expect(object["type"] as? String == "send_key")
   #expect(object["agent_id"] as? String == "w1:p1")
-  #expect(object["key"] as? String == "arrow_down")
+  #expect(object["key"] as? String == "shift_tab")
   #expect(object["token"] == nil)
   #expect(object["text"] == nil)
 }

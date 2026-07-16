@@ -665,6 +665,22 @@ mod tests {
             &mut write_half,
             json!({
                 "version": 1,
+                "id": "shift-tab",
+                "type": "send_key",
+                "agent_id": "w1:p1",
+                "key": "shift_tab"
+            }),
+        )
+        .await;
+        assert_eq!(
+            read_for_id(&mut reader, "shift-tab").await["type"],
+            "input_acknowledged"
+        );
+
+        write_client(
+            &mut write_half,
+            json!({
+                "version": 1,
                 "id": "text",
                 "type": "send_text",
                 "agent_id": "w1:p1",
@@ -688,6 +704,10 @@ mod tests {
         assert!(requests.iter().any(|request| {
             request["method"] == "pane.send_keys"
                 && request["params"] == json!({"pane_id": "w1:p1", "keys": ["down"]})
+        }));
+        assert!(requests.iter().any(|request| {
+            request["method"] == "pane.send_keys"
+                && request["params"] == json!({"pane_id": "w1:p1", "keys": ["shift+tab"]})
         }));
         assert!(requests.iter().any(|request| {
             request["method"] == "pane.send_input"

@@ -30,7 +30,7 @@ The desktop half of the system must:
 - authenticate a client over the private Tailscale network;
 - list live Herdr agents and semantic states;
 - focus a current agent's Herdr pane;
-- send arrows, Enter, Escape, Tab, Space, and printable text to a current agent;
+- send arrows, Enter, Escape, Tab, Shift+Tab, Space, and printable text to a current agent;
 - acknowledge successful Herdr input;
 - report Herdr availability and recover after interruption.
 
@@ -52,7 +52,7 @@ The reusable Swift package must:
 The first phone build adds:
 
 - a four-column SwiftUI agent-key grid with clear selected-agent identity;
-- a connected D-pad, Enter, Tab, and haptics;
+- a connected D-pad, Enter, Tab, Escape, Shift+Tab, and haptics;
 - active-looking Accept and Deny placeholders that provide local press feedback without sending remote input;
 - hold-to-talk Voice that converts speech on-device and sends text plus Enter to the selected agent;
 - connection state, automatic reconnect, and disabled controls when unavailable;
@@ -74,8 +74,8 @@ The complete MVP additionally includes typed instructions and hold-to-talk local
 
 ### Input
 
-- Keep arrows, Enter, and Tab on the primary phone control bank for every current agent.
-- Continue supporting Escape and Space in protocol v1 even though the first phone layout does not expose dedicated keys for them.
+- Keep arrows, Enter, Escape, Tab, and Shift+Tab on the primary phone control bank for every current agent.
+- Continue supporting Space in protocol v1 even though the phone layout does not expose a dedicated key for it.
 - Support printable Unicode text with and without a final Enter.
 - Include the selected agent ID in every input request.
 - Acknowledge input only after Herdr accepts it.

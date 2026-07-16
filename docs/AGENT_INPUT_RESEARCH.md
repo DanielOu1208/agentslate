@@ -1,11 +1,11 @@
 # Coding Agent Key and Permission Research
 
 Date: 2026-07-16
-Status: Research complete; implementation not started
+Status: Research complete; Escape and Shift+Tab implemented
 
 ## Summary
 
-Herdr Remote Keypad already exposes most of the universal terminal controls used by coding agents: arrow keys, Enter, and Tab. The highest-value missing control is **Escape**, followed by **Shift+Tab** for cycling Plan, Manual, and automatic approval modes.
+Herdr Remote Keypad exposes the universal terminal controls used by coding agents: arrow keys, Enter, Tab, **Escape**, and **Shift+Tab** for cycling Plan, Manual, and automatic approval modes.
 
 The existing Accept and Deny placeholders must not blindly send `Enter`, `Y`, or `N`. Herdr currently reports that an agent is blocked, but it does not report the exact permission request, its request ID, or the choices offered by the agent. A stale or misdirected approval keystroke could submit input to the wrong prompt.
 
@@ -17,8 +17,8 @@ There is no credible public cross-agent keypress-frequency dataset. The rankings
 
 | Priority | Control | Recommendation | Reason |
 |---|---|---|---|
-| 1 | Escape | Add a visible button now | Cancels dialogs, rejects or closes selections, and interrupts turns across many agents. It is already supported by protocol v1. |
-| 2 | Shift+Tab | Use a long press on the existing Tab button | Cycles the modes supported by Claude Code, Gemini, Copilot, Droid, and Kimi; the exact cycle differs by agent. It requires one new allowlisted modified key. |
+| 1 | Escape | Implemented as a dedicated button | Cancels dialogs, rejects or closes selections, and interrupts turns across many agents. |
+| 2 | Shift+Tab | Implemented as a dedicated button | Cycles the modes supported by Claude Code, Gemini, Copilot, Droid, and Kimi; the exact cycle differs by agent. |
 | 3 | Space | Keep available, but do not prioritize a permanent button | Useful for checkbox and multi-select interfaces. The bridge already supports it, while arrows and Enter cover most current dialogs. |
 | 4 | Ctrl+O | Consider in a secondary command sheet | Commonly expands tool output or opens detailed transcripts in Claude Code, Gemini, Kimi, and Amp. |
 | 5 | Number keys 1-4 | Offer as a temporary number pad | Kimi and Gemini use number shortcuts in approval or question dialogs; Kilo exposes numbered persistent approval choices. |
@@ -90,8 +90,8 @@ If a protocol only works when the bridge launches and owns the agent session, ad
 
 ## Recommended rollout
 
-1. Expose the already-supported Escape key.
-2. Add `shift+tab` to the bridge allowlist and send it from a long press on Tab.
+1. ~~Expose the already-supported Escape key.~~ Implemented as a dedicated key.
+2. ~~Add `shift+tab` to the bridge allowlist.~~ Implemented as a dedicated key.
 3. Leave Accept and Deny disabled unless a structured pending request exists.
 4. Run a feasibility spike for Codex app-server, Cursor ACP, and Droid SDK to prove that each can control the same session displayed in Herdr without competing ownership.
 5. Add the first adapter that passes that ownership test; do not assume the protocol order is also the implementation order.

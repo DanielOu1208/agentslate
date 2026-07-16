@@ -42,7 +42,7 @@ Exit criterion: a disposable agent prompt is controlled without sending keys thr
 - [x] Authenticate before sending any Herdr state.
 - [x] Bootstrap and normalize agents from `session.snapshot`.
 - [x] Refresh the full snapshot within 200 ms when normalized agent state changes.
-- [x] Forward the eight allowlisted keys.
+- [x] Forward the nine allowlisted keys.
 - [x] Forward printable text with optional atomic Enter.
 - [x] Validate current agent membership before every input.
 - [x] Report Herdr unavailability and reconnect with bounded backoff.
@@ -67,6 +67,7 @@ Exit criterion: the authenticated probe lists current agents and safely operates
 - [x] Add connection state and bounded automatic reconnect to the Swift package.
 - [x] Add a branded four-column, 12-slot agent grid with compact working-folder labels, confirmed Herdr pane focus, and clear selected-agent identity.
 - [x] Add a connected D-pad, Enter, Tab, haptics, and disconnected-state disabling.
+- [x] Add dedicated Escape and Shift+Tab keys.
 - [x] Add active-looking Accept, Deny, and blank-agent placeholders with local press feedback only.
 - [ ] Verify at least three simultaneous agents on a physical iPhone.
 
@@ -126,6 +127,7 @@ Exit criterion: the app is reliable enough for repeated daily supervision.
 | 2026-07-16 | Use only the native asynchronous microphone permission API | Removes the legacy speech-authorizer actor-isolation crash; SpeechAnalyzer performs recognition on-device without a separate speech permission |
 | 2026-07-16 | Use a record-only measurement audio session without ducking other audio | Dictation owns only the microphone path it needs, does not lower other apps' audio, and deactivates capture on cleanup |
 | 2026-07-16 | Make VoiceOver dictation a start/send toggle with an explicit cancel action | Hold gestures are not reliable under VoiceOver, while the alternate actions preserve start, send, and cancel control |
+| 2026-07-16 | Give Escape and Shift+Tab dedicated keypad buttons | Both controls are common across agent dialogs and mode switching; Accept and Deny remain local-only until structured approvals exist |
 
 ## Verification evidence
 
@@ -152,3 +154,4 @@ Exit criterion: the app is reliable enough for repeated daily supervision.
 | 2026-07-15 | Initial Apple STT hold-release-send wiring | Superseded | The first build and simulator tests passed, but physical-device logs exposed an actor-isolation crash in the legacy speech authorization callback |
 | 2026-07-16 | Speech reliability hardening | Automated pass; device pending | Generic iOS 26 simulator build and all 3 app-model tests pass; microphone permission, preparation, finalization, cancellation, failure display, and VoiceOver paths were reviewed. Xcode could not reconnect to the paired iPhone for the final microphone smoke test, so physical speech acceptance remains open |
 | 2026-07-16 | Audio tap concurrency crash fix | Automated pass; device retest pending | Physical-device debugging isolated `_dispatch_assert_queue_fail` on the real-time audio queue. The microphone tap is now explicitly sendable so it can run safely outside the main thread; the simulator build and all 3 app-model tests pass, while a repeat physical hold/release test remains open because the paired iPhone is unavailable |
+| 2026-07-16 | Escape and Shift+Tab keypad route | Automated pass | Rust formatting, Clippy, and all 7 tests passed, including `shift_tab` forwarding as Herdr `shift+tab`; all 16 Swift package tests and all 3 iPhone 17e simulator app tests passed under Xcode 26.6 with iOS 26.5 |

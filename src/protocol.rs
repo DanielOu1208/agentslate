@@ -97,6 +97,7 @@ pub fn herdr_key(key: &str) -> Option<&'static str> {
         "enter" => Some("enter"),
         "escape" => Some("esc"),
         "tab" => Some("tab"),
+        "shift_tab" => Some("shift+tab"),
         "space" => Some("space"),
         _ => None,
     }
@@ -152,9 +153,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn maps_only_the_eight_safe_keys() {
+    fn maps_only_the_nine_safe_keys() {
         assert_eq!(herdr_key("arrow_up"), Some("up"));
         assert_eq!(herdr_key("escape"), Some("esc"));
+        assert_eq!(herdr_key("shift_tab"), Some("shift+tab"));
         assert_eq!(herdr_key("ctrl_c"), None);
         assert_eq!(herdr_key("a"), None);
     }

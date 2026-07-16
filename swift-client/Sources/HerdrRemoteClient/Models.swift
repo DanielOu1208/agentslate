@@ -71,6 +71,7 @@ public enum RemoteKey: String, Codable, CaseIterable, Sendable {
   case enter
   case escape
   case tab
+  case shiftTab = "shift_tab"
   case space
 }
 
