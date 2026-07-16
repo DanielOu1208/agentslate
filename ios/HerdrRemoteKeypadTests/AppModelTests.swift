@@ -54,6 +54,7 @@ func agentIconAndFolderPresentation() {
   #expect(agentIconAssetName(for: "custom") == nil)
   #expect(agentFolderName(cwd: "/projects/remote-keypad", workspace: "workspace") == "remote-keypad")
   #expect(agentFolderName(cwd: nil, workspace: "workspace") == "workspace")
+  #expect(AgentStatus.working.label == "Thinking")
 }
 
 @MainActor

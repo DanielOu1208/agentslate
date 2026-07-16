@@ -194,18 +194,16 @@ private struct AgentKey: View {
   var body: some View {
     Button(action: action) {
       ZStack {
-        agentIcon
-          .frame(width: 28, height: 28)
-          .offset(y: -7)
+        ZStack {
+          AgentStatusRing(status: agent.status)
+            .frame(width: 42, height: 42)
+
+          agentIcon
+            .frame(width: 28, height: 28)
+        }
+        .offset(y: -7)
 
         VStack(spacing: 0) {
-          HStack {
-            Circle()
-              .fill(selected ? .white.opacity(0.9) : agent.status.color)
-              .frame(width: 7, height: 7)
-            Spacer(minLength: 0)
-          }
-
           Spacer(minLength: 0)
 
           if let folder = agentFolderName(cwd: agent.cwd, workspace: agent.workspace) {
@@ -218,11 +216,19 @@ private struct AgentKey: View {
           }
         }
       }
-      .foregroundStyle(selected ? .white : Palette.buttonIcon)
+      .foregroundStyle(Palette.buttonIcon)
       .padding(11)
       .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
-    .buttonStyle(TactileKeyStyle(primary: selected, dishOffsetY: -7))
+    .buttonStyle(TactileKeyStyle(dishOffsetY: -7))
+    .overlay {
+      if selected {
+        RoundedRectangle(cornerRadius: 21, style: .continuous)
+          .stroke(Palette.blue, lineWidth: 2)
+          .shadow(color: Palette.blue.opacity(0.7), radius: 6)
+          .allowsHitTesting(false)
+      }
+    }
     .accessibilityLabel(
       "\(agent.name), \(agentFolderName(cwd: agent.cwd, workspace: agent.workspace) ?? "unknown folder"), \(agent.status.label)\(selected ? ", selected" : "")"
     )
@@ -239,6 +245,70 @@ private struct AgentKey: View {
         .resizable()
         .scaledToFit()
     }
+  }
+}
+
+private struct AgentStatusRing: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  let status: AgentStatus
+
+  var body: some View {
+    let animates = status == .working && !reduceMotion
+
+    TimelineView(.animation(paused: !animates)) { context in
+      ZStack {
+        Circle()
+          .stroke(.white.opacity(0.75), lineWidth: 3)
+
+        ring
+          .rotationEffect(animates ? rotation(at: context.date) : .zero)
+      }
+    }
+    .accessibilityHidden(true)
+  }
+
+  @ViewBuilder private var ring: some View {
+    switch status {
+    case .working:
+      Circle()
+        .trim(from: 0.08, to: 0.84)
+        .stroke(
+          color,
+          style: StrokeStyle(lineWidth: 2, lineCap: .round)
+        )
+    case .blocked:
+      Circle()
+        .stroke(color, lineWidth: 2)
+    case .done:
+      Circle()
+        .stroke(color, lineWidth: 2)
+    case .idle:
+      Circle()
+        .stroke(color, lineWidth: 1)
+    case .unknown:
+      Circle()
+        .stroke(
+          color,
+          style: StrokeStyle(lineWidth: 1.25, lineCap: .round, dash: [1.5, 3])
+        )
+    }
+  }
+
+  private var color: Color {
+    switch status {
+    case .working: Palette.blue.opacity(0.82)
+    case .blocked: Color(red: 0.95, green: 0.36, blue: 0.35)
+    case .done: Color(red: 0.25, green: 0.70, blue: 0.46)
+    case .idle, .unknown: Color(red: 0.64, green: 0.67, blue: 0.72)
+    }
+  }
+
+  private func rotation(at date: Date) -> Angle {
+    let duration = 1.2
+    let progress = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: duration)
+      / duration
+    return .degrees(progress * 360)
   }
 }
 
@@ -866,7 +936,7 @@ private enum Palette {
   static let buttonIcon = Color(red: 0.18, green: 0.20, blue: 0.24)
   static let secondaryText = Color(red: 0.32, green: 0.35, blue: 0.4)
   static let shadow = Color(red: 0.15, green: 0.19, blue: 0.24)
-  static let blue = Color(red: 0.045, green: 0.365, blue: 1)
+  static let blue = Color.blue
   static let blueHighlight = Color(red: 0.24, green: 0.51, blue: 1)
   static let blueLip = Color(red: 0.025, green: 0.24, blue: 0.72)
   static let blocked = Color(red: 0.89, green: 0.22, blue: 0.20)
@@ -875,22 +945,13 @@ private enum Palette {
 }
 
 extension AgentStatus {
-  fileprivate var label: String {
+  var label: String {
     switch self {
-    case .working: "Working"
+    case .working: "Thinking"
     case .blocked: "Blocked"
     case .done: "Done"
     case .idle: "Idle"
     case .unknown(let value): value.isEmpty ? "Unknown" : value.capitalized
-    }
-  }
-
-  fileprivate var color: Color {
-    switch self {
-    case .working: Palette.blue
-    case .blocked: Palette.blocked
-    case .done: Palette.done
-    case .idle, .unknown: Palette.disabled
     }
   }
 }

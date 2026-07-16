@@ -67,7 +67,7 @@ The complete MVP additionally includes typed instructions and hold-to-talk local
 ### Agent dashboard
 
 - Show every Herdr-reported agent with name, workspace, state, optional task title, and selected state.
-- Distinguish working, blocked, done, idle, and unknown states.
+- Distinguish Thinking (`working` on the wire), blocked, done, idle, and unknown states.
 - Focus the tapped agent's existing Herdr pane and select it only after acknowledgement.
 - Keep selection when its agent ID remains in the latest snapshot; clear it when the agent disappears.
 - Prioritize blocked agents visually in the SwiftUI client.
