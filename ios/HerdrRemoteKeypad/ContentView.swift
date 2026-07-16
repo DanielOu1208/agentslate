@@ -298,8 +298,10 @@ private struct AgentStatusRing: View {
 
     TimelineView(.animation(paused: !animates)) { context in
       ZStack {
-        Circle()
-          .stroke(.white.opacity(0.75), lineWidth: 3)
+        if status != .working {
+          Circle()
+            .stroke(.white.opacity(0.75), lineWidth: 3)
+        }
 
         ring
           .rotationEffect(animates ? rotation(at: context.date) : .zero)
@@ -312,14 +314,28 @@ private struct AgentStatusRing: View {
     switch status {
     case .working:
       Circle()
-        .trim(from: 0.08, to: 0.84)
         .stroke(
-          color,
-          style: StrokeStyle(lineWidth: 2, lineCap: .round)
+          AngularGradient(
+            stops: [
+              .init(color: .clear, location: 0),
+              .init(color: .clear, location: 0.15),
+              .init(color: Palette.blue.opacity(0.10), location: 0.27),
+              .init(color: Palette.blue.opacity(0.32), location: 0.70),
+              .init(color: Palette.blue.opacity(0.72), location: 0.88),
+              .init(color: .clear, location: 1),
+            ],
+            center: .center
+          ),
+          lineWidth: 2
         )
     case .blocked:
       Circle()
         .stroke(color, lineWidth: 2)
+        .phaseAnimator(reduceMotion ? [false] : [false, true]) { ring, faded in
+          ring.opacity(faded ? 0.55 : 1)
+        } animation: { _ in
+          .easeInOut(duration: 0.8)
+        }
     case .done:
       Circle()
         .stroke(color, lineWidth: 2)
@@ -338,14 +354,14 @@ private struct AgentStatusRing: View {
   private var color: Color {
     switch status {
     case .working: Palette.blue.opacity(0.82)
-    case .blocked: Color(red: 0.95, green: 0.36, blue: 0.35)
+    case .blocked: .orange
     case .done: Color(red: 0.25, green: 0.70, blue: 0.46)
     case .idle, .unknown: Color(red: 0.64, green: 0.67, blue: 0.72)
     }
   }
 
   private func rotation(at date: Date) -> Angle {
-    let duration = 1.2
+    let duration = 1.8
     let progress = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: duration)
       / duration
     return .degrees(progress * 360)
