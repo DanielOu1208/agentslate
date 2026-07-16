@@ -65,7 +65,7 @@ Exit criterion: the authenticated probe lists current agents and safely operates
 - [x] Implement protocol v1 models and `Network.framework` connection as an iOS 18+ Swift package.
 - [x] Add manual host/token configuration and Keychain storage.
 - [x] Add connection state and bounded automatic reconnect to the Swift package.
-- [x] Add a four-column agent-icon grid with compact working-folder labels, confirmed Herdr pane focus, and clear selected-agent identity.
+- [x] Add a branded four-column, 12-slot agent grid with compact working-folder labels, confirmed Herdr pane focus, and clear selected-agent identity.
 - [x] Add a connected D-pad, Enter, Tab, haptics, and disconnected-state disabling.
 - [x] Add active-looking Accept, Deny, and blank-agent placeholders with local press feedback only.
 - [ ] Verify at least three simultaneous agents on a physical iPhone.

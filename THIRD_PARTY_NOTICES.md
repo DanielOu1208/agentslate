@@ -6,6 +6,7 @@ Agent icons are used only to identify their respective tools in the iOS client. 
 - The OMP icon comes from [oh-my-pi](https://github.com/can1357/oh-my-pi), licensed under the MIT License. Copyright 2025 Mario Zechner and 2025-2026 Can Bölük.
 - The Maki icon comes from [Maki](https://github.com/tontinton/maki), licensed under the MIT License. Copyright 2026 Tony Solomonik.
 - The Droid mark comes from Factory's public [Factory repository](https://github.com/Factory-AI/factory).
+- The Herdr mark comes from the official [Herdr website](https://herdr.dev/assets/logo.svg). Herdr is a trademark of its owner.
 
 The MIT-licensed assets are provided under these terms:
 

@@ -1,3 +1,5 @@
 /target/
 /swift-client/.build/
+/swift-client/.swiftpm/
+**/xcuserdata/
 .DS_Store

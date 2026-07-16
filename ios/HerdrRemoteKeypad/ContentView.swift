@@ -94,6 +94,20 @@ struct ContentView: View {
         .shadow(color: connectionColor.opacity(0.35), radius: 5)
         .accessibilityLabel(model.connectionLabel)
 
+      HStack(spacing: 7) {
+        Image("HerdrLogo")
+          .resizable()
+          .scaledToFit()
+          .frame(width: 22, height: 22)
+          .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+
+        Text("herdr")
+          .font(.system(size: 16, weight: .bold, design: .rounded))
+          .foregroundStyle(Palette.buttonIcon)
+      }
+      .accessibilityElement(children: .combine)
+      .accessibilityLabel("Herdr")
+
       Spacer()
 
       Button {
@@ -145,7 +159,7 @@ private struct AgentGrid: View {
           .frame(width: cell, height: cell)
         }
 
-        ForEach(0..<max(0, 8 - agents.count), id: \.self) { _ in
+        ForEach(0..<max(0, 12 - agents.count), id: \.self) { _ in
           EmptyAgentSlot(action: tapPlaceholder)
             .frame(width: cell, height: cell)
         }
@@ -153,7 +167,7 @@ private struct AgentGrid: View {
       .padding(.vertical, 4)
     }
     .scrollClipDisabled()
-    .frame(height: cell * 2 + gap + 8)
+    .frame(height: cell * 3 + gap * 2 + 8)
   }
 }
 
