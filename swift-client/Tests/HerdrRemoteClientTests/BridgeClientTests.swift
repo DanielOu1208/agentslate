@@ -1,0 +1,491 @@
+import Foundation
+@preconcurrency import Network
+import Testing
+
+@testable import HerdrRemoteClient
+
+private enum TestFailure: Error {
+  case timeout
+  case listenerFailed
+}
+
+private struct RecordedRequest: Equatable, Sendable {
+  let type: String
+  let agentID: String?
+  let key: String?
+  let text: String?
+  let submit: Bool?
+}
+
+private final class FakeBridge: @unchecked Sendable {
+  private let queue = DispatchQueue(label: "HerdrRemoteClientTests.FakeBridge")
+  private let listener: NWListener
+  private let lock = NSLock()
+  private let expectedToken = String(repeating: "a", count: 64)
+  private let rejectAuthentication: Bool
+  private let dropFirstConnection: Bool
+  private let dropOnPing: Bool
+  private let ignorePing: Bool
+  private var connections = 0
+  private var snapshotRequests = 0
+  private var recorded: [RecordedRequest] = []
+
+  init(
+    rejectAuthentication: Bool = false,
+    dropFirstConnection: Bool = false,
+    dropOnPing: Bool = false,
+    ignorePing: Bool = false
+  ) throws {
+    self.rejectAuthentication = rejectAuthentication
+    self.dropFirstConnection = dropFirstConnection
+    self.dropOnPing = dropOnPing
+    self.ignorePing = ignorePing
+    listener = try NWListener(using: .tcp, on: .any)
+  }
+
+  var connectionCount: Int {
+    lock.withLock { connections }
+  }
+
+  var requests: [RecordedRequest] {
+    lock.withLock { recorded }
+  }
+
+  var snapshotRequestCount: Int {
+    lock.withLock { snapshotRequests }
+  }
+
+  func start() async throws -> UInt16 {
+    listener.newConnectionHandler = { [weak self] connection in
+      self?.accept(connection)
+    }
+    listener.start(queue: queue)
+    for _ in 0..<100 {
+      if let port = listener.port?.rawValue, port != 0 {
+        return port
+      }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    throw TestFailure.listenerFailed
+  }
+
+  func stop() {
+    listener.cancel()
+  }
+
+  private func accept(_ connection: NWConnection) {
+    let number = lock.withLock {
+      connections += 1
+      return connections
+    }
+    let handler = FakeConnection(
+      connection: connection,
+      queue: queue,
+      server: self,
+      number: number
+    )
+    connection.stateUpdateHandler = { state in
+      if case .ready = state {
+        handler.receive()
+      }
+    }
+    connection.start(queue: queue)
+  }
+
+  fileprivate func handle(_ request: [String: Any], on handler: FakeConnection) {
+    guard let type = request["type"] as? String, let id = request["id"] as? String else {
+      return
+    }
+
+    switch type {
+    case "authenticate":
+      if rejectAuthentication || request["token"] as? String != expectedToken {
+        handler.send(
+          [
+            response(
+              id: id, type: "error",
+              extra: [
+                "code": "authentication_failed",
+                "message": "authentication failed",
+              ])
+          ], cancelAfterSending: true)
+      } else if dropFirstConnection, handler.number == 1 {
+        handler.send([response(id: id, type: "authenticated")], cancelAfterSending: true)
+      } else {
+        handler.send([
+          response(id: id, type: "authenticated"),
+          event(type: "herdr_state", extra: ["state": "connected"]),
+          snapshot(eventID: 2),
+        ])
+      }
+    case "request_snapshot":
+      lock.withLock { snapshotRequests += 1 }
+      handler.send([snapshot(id: id)])
+    case "ping":
+      if dropOnPing {
+        handler.cancel()
+      } else if !ignorePing {
+        handler.send([response(id: id, type: "pong")])
+      }
+    case "send_key", "send_text":
+      if request["agent_id"] as? String == "missing" {
+        handler.send([
+          response(
+            id: id,
+            type: "error",
+            extra: ["code": "agent_not_found", "message": "agent is unavailable"])
+        ])
+        return
+      }
+      lock.withLock {
+        recorded.append(
+          RecordedRequest(
+            type: type,
+            agentID: request["agent_id"] as? String,
+            key: request["key"] as? String,
+            text: request["text"] as? String,
+            submit: request["submit"] as? Bool
+          ))
+      }
+      handler.send([response(id: id, type: "input_acknowledged")])
+    default:
+      handler.send([
+        response(
+          id: id, type: "error",
+          extra: [
+            "code": "invalid_message",
+            "message": "invalid protocol message",
+          ])
+      ])
+    }
+  }
+
+  private func response(id: String, type: String, extra: [String: Any] = [:]) -> [String: Any] {
+    ["version": 1, "id": id, "type": type].merging(extra) { _, new in new }
+  }
+
+  private func event(type: String, extra: [String: Any]) -> [String: Any] {
+    ["version": 1, "event_id": 1, "type": type].merging(extra) { _, new in new }
+  }
+
+  private func snapshot(id: String? = nil, eventID: Int? = nil) -> [String: Any] {
+    var message: [String: Any] = [
+      "version": 1,
+      "type": "agent_snapshot",
+      "herdr_protocol": 16,
+      "herdr_version": "0.7.4",
+      "agents": [
+        [
+          "id": "w1:p1",
+          "name": "codex",
+          "status": "blocked",
+          "title": "Approve command",
+          "workspace": "demo",
+          "cwd": "/tmp/demo",
+        ]
+      ],
+    ]
+    message["id"] = id
+    message["event_id"] = eventID
+    return message
+  }
+}
+
+private final class FakeConnection: @unchecked Sendable {
+  let number: Int
+  private let connection: NWConnection
+  private let queue: DispatchQueue
+  private weak var server: FakeBridge?
+  private var decoder = FrameDecoder()
+
+  init(connection: NWConnection, queue: DispatchQueue, server: FakeBridge, number: Int) {
+    self.connection = connection
+    self.queue = queue
+    self.server = server
+    self.number = number
+  }
+
+  func receive() {
+    connection.receive(minimumIncompleteLength: 1, maximumLength: FrameDecoder.maximumBytes) {
+      [weak self] data, _, complete, error in
+      guard let self else { return }
+      if let data {
+        for frame in (try? decoder.append(data)) ?? [] {
+          if let request = try? JSONSerialization.jsonObject(with: frame) as? [String: Any] {
+            server?.handle(request, on: self)
+          }
+        }
+      }
+      if error == nil, !complete {
+        receive()
+      }
+    }
+  }
+
+  func send(_ messages: [[String: Any]], cancelAfterSending: Bool = false) {
+    var data = Data()
+    for message in messages {
+      data.append(try! JSONSerialization.data(withJSONObject: message))
+      data.append(0x0A)
+    }
+    connection.send(
+      content: data,
+      completion: .contentProcessed { [weak self] _ in
+        guard cancelAfterSending, let self else { return }
+        queue.asyncAfter(deadline: .now() + .milliseconds(50)) {
+          self.connection.cancel()
+        }
+      })
+  }
+
+  func cancel() {
+    connection.cancel()
+  }
+}
+
+private func withTimeout<T: Sendable>(
+  seconds: Int = 3,
+  operation: @escaping @Sendable () async throws -> T
+) async throws -> T {
+  try await withThrowingTaskGroup(of: T.self) { group in
+    group.addTask(operation: operation)
+    group.addTask {
+      try await Task.sleep(for: .seconds(seconds))
+      throw TestFailure.timeout
+    }
+    let result = try await group.next()!
+    group.cancelAll()
+    return result
+  }
+}
+
+@Test func clientAuthenticatesReceivesAgentsAndSendsInput() async throws {
+  let bridge = try FakeBridge()
+  let port = try await bridge.start()
+  let client = try BridgeClient(
+    host: "127.0.0.1",
+    port: port,
+    token: String(repeating: "a", count: 64)
+  )
+  let agents = Task { () throws -> [BridgeAgent] in
+    for await event in client.events {
+      if case .agents(let agents) = event, !agents.isEmpty {
+        return agents
+      }
+    }
+    throw TestFailure.timeout
+  }
+
+  await client.start()
+  #expect(try await withTimeout { try await agents.value }.first?.status == .blocked)
+  try await client.ping()
+  try await client.send(key: .arrowDown, to: "w1:p1")
+  try await client.send(text: "continue", submit: true, to: "w1:p1")
+  do {
+    try await client.send(key: .enter, to: "missing")
+    Issue.record("remote error was not returned")
+  } catch let BridgeError.remote(code, message) {
+    #expect(code == "agent_not_found")
+    #expect(message == "agent is unavailable")
+  }
+
+  #expect(
+    bridge.requests == [
+      RecordedRequest(
+        type: "send_key", agentID: "w1:p1", key: "arrow_down", text: nil, submit: nil),
+      RecordedRequest(
+        type: "send_text", agentID: "w1:p1", key: nil, text: "continue", submit: true),
+    ])
+  #expect(bridge.snapshotRequestCount == 0)
+  await client.stop()
+  bridge.stop()
+}
+
+@Test func authenticationFailureDoesNotReconnect() async throws {
+  let bridge = try FakeBridge(rejectAuthentication: true)
+  let port = try await bridge.start()
+  let client = try BridgeClient(
+    host: "127.0.0.1",
+    port: port,
+    token: String(repeating: "a", count: 64)
+  )
+  let failure = Task { () throws -> BridgeError in
+    for await event in client.events {
+      if case .error(let error) = event {
+        return error
+      }
+    }
+    throw TestFailure.timeout
+  }
+
+  await client.start()
+  #expect(try await withTimeout { try await failure.value } == .authenticationFailed)
+  try await Task.sleep(for: .milliseconds(700))
+  #expect(bridge.connectionCount == 1)
+  bridge.stop()
+}
+
+@Test func transportFailureReconnects() async throws {
+  let bridge = try FakeBridge(dropFirstConnection: true)
+  let port = try await bridge.start()
+  let client = try BridgeClient(
+    host: "127.0.0.1",
+    port: port,
+    token: String(repeating: "a", count: 64)
+  )
+  let connections = Task { () throws -> Int in
+    var connectedEvents = 0
+    var reconnectStarted = false
+    var receivedFreshSnapshot = false
+    for await event in client.events {
+      if case .connectionState(.reconnecting) = event {
+        reconnectStarted = true
+      } else if case .agents = event, reconnectStarted {
+        receivedFreshSnapshot = true
+      } else if event == .connectionState(.connected) {
+        connectedEvents += 1
+      }
+      if connectedEvents == 2, receivedFreshSnapshot {
+        return connectedEvents
+      }
+    }
+    throw TestFailure.timeout
+  }
+
+  await client.start()
+  #expect(try await withTimeout { try await connections.value } == 2)
+  #expect(bridge.connectionCount >= 2)
+  await client.stop()
+  bridge.stop()
+}
+
+@Test func invalidConfigurationAndTextFailLocally() async throws {
+  do {
+    _ = try BridgeClient(host: "127.0.0.1", token: "not-a-token")
+    Issue.record("invalid token was accepted")
+  } catch let error as BridgeError {
+    #expect(error == .invalidToken)
+  }
+
+  let client = try BridgeClient(
+    host: "127.0.0.1",
+    token: String(repeating: "a", count: 64)
+  )
+  do {
+    try await client.send(text: "two\nlines", submit: true, to: "w1:p1")
+    Issue.record("control character was accepted")
+  } catch let error as BridgeError {
+    #expect(error == .invalidText)
+  }
+}
+
+@Test func pendingRequestFailsWhenTransportCloses() async throws {
+  let bridge = try FakeBridge(dropOnPing: true)
+  let port = try await bridge.start()
+  let client = try BridgeClient(
+    host: "127.0.0.1",
+    port: port,
+    token: String(repeating: "a", count: 64)
+  )
+  let connected = Task { () throws -> Void in
+    for await event in client.events where event == .connectionState(.connected) {
+      return
+    }
+    throw TestFailure.timeout
+  }
+
+  await client.start()
+  try await withTimeout { try await connected.value }
+  do {
+    try await client.ping()
+    Issue.record("ping unexpectedly succeeded")
+  } catch let error as BridgeError {
+    guard case .transport = error else {
+      Issue.record("unexpected error: \(error)")
+      return
+    }
+  }
+  await client.stop()
+  bridge.stop()
+}
+
+@Test func pendingRequestTimesOutWhenBridgeStaysOpen() async throws {
+  let bridge = try FakeBridge(ignorePing: true)
+  let port = try await bridge.start()
+  let client = try BridgeClient(
+    host: "127.0.0.1",
+    port: port,
+    token: String(repeating: "a", count: 64)
+  )
+  let connected = Task { () throws -> Void in
+    for await event in client.events where event == .connectionState(.connected) {
+      return
+    }
+    throw TestFailure.timeout
+  }
+
+  await client.start()
+  try await withTimeout { try await connected.value }
+  do {
+    try await withTimeout(seconds: 6) { try await client.ping() }
+    Issue.record("ping unexpectedly succeeded")
+  } catch let error as BridgeError {
+    #expect(error == .requestTimedOut)
+  }
+  await client.stop()
+  bridge.stop()
+}
+
+@Test func stopCancelsScheduledReconnect() async throws {
+  let bridge = try FakeBridge(dropFirstConnection: true)
+  let port = try await bridge.start()
+  let client = try BridgeClient(
+    host: "127.0.0.1",
+    port: port,
+    token: String(repeating: "a", count: 64)
+  )
+  let reconnecting = Task { () throws -> Void in
+    for await event in client.events {
+      if case .connectionState(.reconnecting) = event {
+        return
+      }
+    }
+    throw TestFailure.timeout
+  }
+
+  await client.start()
+  try await withTimeout { try await reconnecting.value }
+  await client.stop()
+  try await Task.sleep(for: .milliseconds(700))
+  #expect(bridge.connectionCount == 1)
+  bridge.stop()
+}
+
+@Test(.enabled(if: ProcessInfo.processInfo.environment["HERDR_BRIDGE_TOKEN_FILE"] != nil))
+func liveRustBridgeSmokeTest() async throws {
+  let environment = ProcessInfo.processInfo.environment
+  let address = environment["HERDR_BRIDGE_ADDRESS"] ?? "127.0.0.1:8765"
+  guard let separator = address.lastIndex(of: ":"),
+    let port = UInt16(address[address.index(after: separator)...]),
+    let tokenFile = environment["HERDR_BRIDGE_TOKEN_FILE"]
+  else {
+    throw BridgeError.invalidAddress
+  }
+  let host = String(address[..<separator])
+  let token = try String(contentsOfFile: tokenFile, encoding: .utf8)
+    .trimmingCharacters(in: .whitespacesAndNewlines)
+  let client = try BridgeClient(host: host, port: port, token: token)
+  let agents = Task { () throws -> [BridgeAgent] in
+    for await event in client.events {
+      if case .agents(let agents) = event {
+        return agents
+      }
+    }
+    throw TestFailure.timeout
+  }
+
+  await client.start()
+  _ = try await withTimeout { try await agents.value }
+  try await client.ping()
+  await client.stop()
+}

@@ -1,0 +1,3 @@
+/target/
+/swift-client/.build/
+.DS_Store
