@@ -29,6 +29,7 @@ The desktop half of the system must:
 
 - authenticate a client over the private Tailscale network;
 - list live Herdr agents and semantic states;
+- focus a current agent's Herdr pane;
 - send arrows, Enter, Escape, Tab, Space, and printable text to a current agent;
 - acknowledge successful Herdr input;
 - report Herdr availability and recover after interruption.
@@ -42,6 +43,7 @@ The reusable Swift package must:
 - model protocol v1 without depending on SwiftUI;
 - authenticate and exchange newline-delimited JSON using `Network.framework`;
 - publish connection, Herdr availability, and agent snapshot events;
+- focus a current agent and wait for bridge acknowledgement;
 - send allowlisted keys and validated text;
 - reconnect after transport failure but stop after authentication failure.
 
@@ -65,6 +67,7 @@ The complete MVP additionally includes typed instructions and hold-to-talk local
 
 - Show every Herdr-reported agent with name, workspace, state, optional task title, and selected state.
 - Distinguish working, blocked, done, idle, and unknown states.
+- Focus the tapped agent's existing Herdr pane and select it only after acknowledgement.
 - Keep selection when its agent ID remains in the latest snapshot; clear it when the agent disappears.
 - Prioritize blocked agents visually in the SwiftUI client.
 
@@ -115,7 +118,7 @@ The complete MVP additionally includes typed instructions and hold-to-talk local
 - Newline-delimited JSON remains the bridge wire format for easy Swift decoding and debugging.
 - The development credential is a generated shared token; QR pairing and revocation are later work.
 - Terminal streaming was removed before the first phone client because the user will watch the agent on another display.
-- Agent selection is client-local; every input request carries its target agent ID.
+- The selected keypad target remains client state, while each agent tap focuses the matching Herdr pane before changing that selection.
 - Protocol v1 was revised in place because no released client depended on its earlier terminal-streaming draft.
 - The shared Swift package targets iOS 18 and newer.
 - Dedicated Accept, Deny, and Voice keys remain local-only placeholders until their integrations have enough structured data to send safe remote input.

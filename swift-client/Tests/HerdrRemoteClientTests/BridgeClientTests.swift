@@ -127,7 +127,7 @@ private final class FakeBridge: @unchecked Sendable {
       } else if !ignorePing {
         handler.send([response(id: id, type: "pong")])
       }
-    case "send_key", "send_text":
+    case "focus_agent", "send_key", "send_text":
       if request["agent_id"] as? String == "missing" {
         handler.send([
           response(
@@ -147,7 +147,9 @@ private final class FakeBridge: @unchecked Sendable {
             submit: request["submit"] as? Bool
           ))
       }
-      handler.send([response(id: id, type: "input_acknowledged")])
+      handler.send([
+        response(id: id, type: type == "focus_agent" ? "agent_focused" : "input_acknowledged")
+      ])
     default:
       handler.send([
         response(
@@ -279,6 +281,14 @@ private func withTimeout<T: Sendable>(
   await client.start()
   #expect(try await withTimeout { try await agents.value }.first?.status == .blocked)
   try await client.ping()
+  try await client.focus(agentID: "w1:p1")
+  do {
+    try await client.focus(agentID: "missing")
+    Issue.record("remote focus error was not returned")
+  } catch let BridgeError.remote(code, message) {
+    #expect(code == "agent_not_found")
+    #expect(message == "agent is unavailable")
+  }
   try await client.send(key: .arrowDown, to: "w1:p1")
   try await client.send(text: "continue", submit: true, to: "w1:p1")
   do {
@@ -291,6 +301,8 @@ private func withTimeout<T: Sendable>(
 
   #expect(
     bridge.requests == [
+      RecordedRequest(
+        type: "focus_agent", agentID: "w1:p1", key: nil, text: nil, submit: nil),
       RecordedRequest(
         type: "send_key", agentID: "w1:p1", key: "arrow_down", text: nil, submit: nil),
       RecordedRequest(

@@ -5,7 +5,7 @@ import Testing
 
 @MainActor
 @Test
-func agentOrderingSelectionAndKeypadAvailability() {
+func agentOrderingAndKeypadAvailability() {
   let model = AppModel(configuredHost: "", configuredToken: "")
   let working = BridgeAgent(id: "working", name: "Codex", status: .working)
   let blocked = BridgeAgent(id: "blocked", name: "Claude", status: .blocked)
@@ -13,10 +13,9 @@ func agentOrderingSelectionAndKeypadAvailability() {
   model.apply(.agents([working, blocked]))
   #expect(model.displayAgents.map(\.id) == ["blocked", "working"])
 
-  model.select(working)
   model.apply(.connectionState(.connected))
   model.apply(.herdrAvailability(.connected))
-  #expect(model.canSend)
+  #expect(!model.canSend)
 
   model.apply(.agents([blocked]))
   #expect(model.selectedAgentID == nil)

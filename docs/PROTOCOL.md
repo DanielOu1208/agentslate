@@ -1,6 +1,6 @@
 # Herdr Remote Keypad Protocol v1
 
-Protocol v1 is the keypad-only contract shared by the Rust bridge and Swift client. Agent selection belongs to the client; every input request names its target agent so the bridge can revalidate it immediately before forwarding input.
+Protocol v1 is the keypad-only contract shared by the Rust bridge and Swift client. Tapping an agent focuses its Herdr pane and selects it as the keypad target; every focus and input request names its target agent so the bridge can revalidate it immediately before forwarding the action.
 
 ## Transport
 
@@ -38,10 +38,16 @@ Request a fresh complete agent list:
 {"version":1,"id":"2","type":"request_snapshot"}
 ```
 
+Focus a current agent's Herdr pane:
+
+```json
+{"version":1,"id":"3","type":"focus_agent","agent_id":"w1:p1"}
+```
+
 Send an allowlisted key to a current agent:
 
 ```json
-{"version":1,"id":"3","type":"send_key","agent_id":"w1:p1","key":"arrow_down"}
+{"version":1,"id":"4","type":"send_key","agent_id":"w1:p1","key":"arrow_down"}
 ```
 
 Allowed bridge key names are `arrow_up`, `arrow_down`, `arrow_left`, `arrow_right`, `enter`, `escape`, `tab`, and `space`.
@@ -49,7 +55,7 @@ Allowed bridge key names are `arrow_up`, `arrow_down`, `arrow_left`, `arrow_righ
 Send printable Unicode text, optionally followed atomically by Enter:
 
 ```json
-{"version":1,"id":"4","type":"send_text","agent_id":"w1:p1","text":"Continue with the smallest fix.","submit":true}
+{"version":1,"id":"5","type":"send_text","agent_id":"w1:p1","text":"Continue with the smallest fix.","submit":true}
 ```
 
 Text is limited to 8,192 UTF-8 bytes and may not contain Unicode control characters. This prevents embedded newlines or escape bytes from bypassing the key allowlist.
@@ -89,7 +95,13 @@ The bridge pushes this event after authentication and whenever normalized agent 
 Input success:
 
 ```json
-{"version":1,"id":"3","type":"input_acknowledged"}
+{"version":1,"id":"4","type":"input_acknowledged"}
+```
+
+Focus success:
+
+```json
+{"version":1,"id":"3","type":"agent_focused"}
 ```
 
 Herdr availability:
@@ -135,7 +147,7 @@ Error messages are for diagnostics; clients branch on `code`.
 
 - Clients replace their agent cache whenever `agent_snapshot` arrives.
 - The bridge pushes the initial snapshot after authentication; clients do not need a second bootstrap `request_snapshot`.
-- Agent selection is local client state. Preserve the selected ID while it remains in the latest snapshot; clear it when it disappears.
+- The selected keypad target is client state. Change it only after `agent_focused`; preserve it while its ID remains in the latest snapshot and clear it when the agent disappears.
 - After reconnecting, clients authenticate again and use the new snapshot as authoritative state.
 - Clients fail a request if no matching response arrives within 5 seconds, even when the TCP connection remains open.
 - Unexpected transport failures retry after 0.5, 1, 2, 4, then 5 seconds, capped at 5 seconds. Authentication failures do not retry.

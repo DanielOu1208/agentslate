@@ -186,6 +186,17 @@ async fn handle_connection(
                 }
                 Err(error) => send_herdr_error(&outgoing, &id, error).await?,
             },
+            ClientMessage::FocusAgent { id, agent_id, .. } => {
+                match current_agent(&herdr, &agent_id).await {
+                    Ok(_) => match herdr.focus_pane(&agent_id).await {
+                        Ok(()) => {
+                            send(&outgoing, response(&id, "agent_focused", json!({}))).await?
+                        }
+                        Err(error) => send_herdr_error(&outgoing, &id, error).await?,
+                    },
+                    Err(error) => send_herdr_error(&outgoing, &id, error).await?,
+                }
+            }
             ClientMessage::SendKey {
                 id, agent_id, key, ..
             } => {
@@ -482,6 +493,7 @@ mod tests {
                         }
                     }
                 }),
+                "pane.focus" => json!({"id": request["id"], "result": {"type": "pane_focused"}}),
                 "pane.send_keys" | "pane.send_input" => {
                     json!({"id": request["id"], "result": {"type": "input_sent"}})
                 }
@@ -591,6 +603,36 @@ mod tests {
             &mut write_half,
             json!({
                 "version": 1,
+                "id": "focus",
+                "type": "focus_agent",
+                "agent_id": "w1:p1"
+            }),
+        )
+        .await;
+        assert_eq!(
+            read_for_id(&mut reader, "focus").await["type"],
+            "agent_focused"
+        );
+
+        write_client(
+            &mut write_half,
+            json!({
+                "version": 1,
+                "id": "missing-focus",
+                "type": "focus_agent",
+                "agent_id": "missing"
+            }),
+        )
+        .await;
+        assert_eq!(
+            read_for_id(&mut reader, "missing-focus").await["code"],
+            "agent_not_found"
+        );
+
+        write_client(
+            &mut write_half,
+            json!({
+                "version": 1,
                 "id": "invalid-key",
                 "type": "send_key",
                 "agent_id": "w1:p1",
@@ -638,6 +680,12 @@ mod tests {
 
         let requests = herdr_requests.lock().await;
         assert!(requests.iter().any(|request| {
+            request["method"] == "pane.focus" && request["params"] == json!({"pane_id": "w1:p1"})
+        }));
+        assert!(!requests.iter().any(|request| {
+            request["method"] == "pane.focus" && request["params"] == json!({"pane_id": "missing"})
+        }));
+        assert!(requests.iter().any(|request| {
             request["method"] == "pane.send_keys"
                 && request["params"] == json!({"pane_id": "w1:p1", "keys": ["down"]})
         }));
@@ -651,7 +699,7 @@ mod tests {
         }));
         assert!(requests.iter().all(|request| matches!(
             request["method"].as_str(),
-            Some("session.snapshot" | "pane.send_keys" | "pane.send_input")
+            Some("session.snapshot" | "pane.focus" | "pane.send_keys" | "pane.send_input")
         )));
         drop(requests);
 

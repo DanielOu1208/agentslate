@@ -122,6 +122,7 @@ extension BridgeError: LocalizedError {
 enum WireRequestPayload: Sendable {
   case authenticate(token: String)
   case requestSnapshot
+  case focusAgent(agentID: String)
   case sendKey(agentID: String, key: RemoteKey)
   case sendText(agentID: String, text: String, submit: Bool)
   case ping
@@ -148,6 +149,9 @@ struct WireRequest: Encodable, Sendable {
       try container.encode(token, forKey: .token)
     case .requestSnapshot:
       try container.encode("request_snapshot", forKey: .type)
+    case .focusAgent(let agentID):
+      try container.encode("focus_agent", forKey: .type)
+      try container.encode(agentID, forKey: .agentID)
     case .sendKey(let agentID, let key):
       try container.encode("send_key", forKey: .type)
       try container.encode(agentID, forKey: .agentID)
@@ -166,6 +170,7 @@ struct WireRequest: Encodable, Sendable {
 enum WireMessage: Sendable {
   case authenticated(id: String)
   case agentSnapshot(id: String?, agents: [BridgeAgent])
+  case agentFocused(id: String)
   case inputAcknowledged(id: String)
   case pong(id: String)
   case herdrState(HerdrAvailability)
@@ -174,7 +179,7 @@ enum WireMessage: Sendable {
 
   var id: String? {
     switch self {
-    case .authenticated(let id), .inputAcknowledged(let id), .pong(let id): id
+    case .authenticated(let id), .agentFocused(let id), .inputAcknowledged(let id), .pong(let id): id
     case .agentSnapshot(let id, _), .error(let id, _, _), .unknown(let id, _): id
     case .herdrState: nil
     }
@@ -206,6 +211,8 @@ extension WireMessage: Decodable {
         id: try container.decodeIfPresent(String.self, forKey: .id),
         agents: try container.decode([BridgeAgent].self, forKey: .agents)
       )
+    case "agent_focused":
+      self = .agentFocused(id: try container.decode(String.self, forKey: .id))
     case "input_acknowledged":
       self = .inputAcknowledged(id: try container.decode(String.self, forKey: .id))
     case "pong":

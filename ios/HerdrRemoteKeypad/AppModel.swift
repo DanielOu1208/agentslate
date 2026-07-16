@@ -73,8 +73,19 @@ final class AppModel {
     )
   }
 
-  func select(_ agent: BridgeAgent) {
-    selectedAgentID = agent.id
+  func select(_ agent: BridgeAgent) async {
+    guard let client else {
+      report(BridgeError.notConnected)
+      return
+    }
+    do {
+      try await client.focus(agentID: agent.id)
+      guard agents.contains(where: { $0.id == agent.id }) else { return }
+      selectedAgentID = agent.id
+      errorMessage = nil
+    } catch {
+      report(error)
+    }
   }
 
   func send(_ key: RemoteKey) async {

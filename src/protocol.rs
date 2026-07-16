@@ -19,6 +19,11 @@ pub enum ClientMessage {
         version: u32,
         id: String,
     },
+    FocusAgent {
+        version: u32,
+        id: String,
+        agent_id: String,
+    },
     SendKey {
         version: u32,
         id: String,
@@ -43,6 +48,7 @@ impl ClientMessage {
         match self {
             Self::Authenticate { version, .. }
             | Self::RequestSnapshot { version, .. }
+            | Self::FocusAgent { version, .. }
             | Self::SendKey { version, .. }
             | Self::SendText { version, .. }
             | Self::Ping { version, .. } => *version,
@@ -53,6 +59,7 @@ impl ClientMessage {
         match self {
             Self::Authenticate { id, .. }
             | Self::RequestSnapshot { id, .. }
+            | Self::FocusAgent { id, .. }
             | Self::SendKey { id, .. }
             | Self::SendText { id, .. }
             | Self::Ping { id, .. } => id,

@@ -173,6 +173,12 @@ impl HerdrClient {
         .map_err(|error| HerdrError::Protocol(error.to_string()))
     }
 
+    pub async fn focus_pane(&self, agent_id: &str) -> Result<(), HerdrError> {
+        self.request("pane.focus", json!({"pane_id": agent_id}))
+            .await?;
+        Ok(())
+    }
+
     pub async fn send_key(&self, agent_id: &str, key: &str) -> Result<(), HerdrError> {
         self.request(
             "pane.send_keys",

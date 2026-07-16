@@ -94,6 +94,13 @@ public actor BridgeClient {
     }
   }
 
+  public func focus(agentID: String) async throws {
+    let message = try await request(.focusAgent(agentID: agentID))
+    guard case .agentFocused = message else {
+      throw BridgeError.protocolViolation("focus response is invalid")
+    }
+  }
+
   public func send(key: RemoteKey, to agentID: String) async throws {
     let message = try await request(.sendKey(agentID: agentID, key: key))
     guard case .inputAcknowledged = message else {
@@ -249,7 +256,7 @@ public actor BridgeClient {
       emit(.herdrAvailability(state))
     case .error:
       emit(.error(remoteError(from: message)))
-    case .authenticated, .inputAcknowledged, .pong, .unknown:
+    case .authenticated, .agentFocused, .inputAcknowledged, .pong, .unknown:
       break
     }
   }
@@ -262,7 +269,7 @@ public actor BridgeClient {
         throw BridgeError.notConnected
       }
       connection = activeConnection
-    case .requestSnapshot, .sendKey, .sendText, .ping:
+    case .requestSnapshot, .focusAgent, .sendKey, .sendText, .ping:
       guard case .connected(let activeConnection) = lifecycle else {
         throw BridgeError.notConnected
       }

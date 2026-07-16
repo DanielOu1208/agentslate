@@ -23,7 +23,7 @@ struct ContentView: View {
             selectedAgentID: model.selectedAgentID,
             cell: cell,
             gap: gap,
-            select: model.select,
+            select: { agent in Task { await model.select(agent) } },
             tapPlaceholder: tapPlaceholder
           )
 
