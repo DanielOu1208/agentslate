@@ -2,6 +2,7 @@ import Foundation
 
 public struct BridgeAgent: Codable, Hashable, Identifiable, Sendable {
   public let id: String
+  public let kind: String
   public let name: String
   public let status: AgentStatus
   public let title: String?
@@ -10,6 +11,7 @@ public struct BridgeAgent: Codable, Hashable, Identifiable, Sendable {
 
   public init(
     id: String,
+    kind: String,
     name: String,
     status: AgentStatus,
     title: String? = nil,
@@ -17,6 +19,7 @@ public struct BridgeAgent: Codable, Hashable, Identifiable, Sendable {
     cwd: String? = nil
   ) {
     self.id = id
+    self.kind = kind
     self.name = name
     self.status = status
     self.title = title

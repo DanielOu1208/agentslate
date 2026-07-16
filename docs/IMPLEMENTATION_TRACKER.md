@@ -65,7 +65,7 @@ Exit criterion: the authenticated probe lists current agents and safely operates
 - [x] Implement protocol v1 models and `Network.framework` connection as an iOS 18+ Swift package.
 - [x] Add manual host/token configuration and Keychain storage.
 - [x] Add connection state and bounded automatic reconnect to the Swift package.
-- [x] Add a four-column square agent-key grid, confirmed Herdr pane focus, and clear selected-agent identity.
+- [x] Add a four-column agent-icon grid with compact working-folder labels, confirmed Herdr pane focus, and clear selected-agent identity.
 - [x] Add a connected D-pad, Enter, Tab, haptics, and disconnected-state disabling.
 - [x] Add active-looking Accept, Deny, Voice, and blank-agent placeholders with local press feedback only.
 - [ ] Verify at least three simultaneous agents on a physical iPhone.
@@ -118,6 +118,7 @@ Exit criterion: the app is reliable enough for repeated daily supervision.
 | 2026-07-15 | Use a neutral-white modern hardware style for the iPhone keypad | Large sculpted square keys, circular recessed dishes, and a connected D-pad make the remote tactile without copying retro screws, dials, textures, or decoration |
 | 2026-07-15 | Keep Accept, Deny, and Voice local-only until their integrations are structured | The placeholders can demonstrate the final interaction without blindly sending input to the wrong prompt |
 | 2026-07-15 | Keep bridge port 8765 fixed in the first iPhone setup screen | Manual host and token are sufficient for the current single-owner Tailscale workflow |
+| 2026-07-15 | Use bundled monochrome agent marks with a terminal fallback | Agent keys remain identifiable without crowding the tactile button face |
 
 ## Verification evidence
 
@@ -137,6 +138,7 @@ Exit criterion: the app is reliable enough for repeated daily supervision.
 | 2026-07-15 | Swift-to-Rust live smoke | Pass | Swift authenticated to the localhost Rust bridge, received current Herdr agents, and completed ping without sending agent input |
 | 2026-07-15 | Post-audit connector regression | Pass | Updated Rust list/ping and Swift live smoke passed against the real Herdr 0.7.4 socket; no agent input was sent |
 | 2026-07-15 | iOS simulator build and app-model test | Pass | Xcode 26.4.1 built the iOS 18 app for an iPhone 17 Pro Max simulator; blocked-first ordering and keypad gating test passed after confirmed-focus selection wiring |
+| 2026-07-15 | Agent icon and folder presentation | Pass | App-model tests cover all 21 supported agent kinds, the generic fallback, cwd basename extraction, and workspace fallback; simulator review confirmed recognizable agent marks, softer button glyphs, and one 48-point dish across populated keys, placeholders, controls, and D-pad directions |
 | 2026-07-15 | iOS visual and accessibility review | Pass | The four-column grid, rounded D-pad, and centered Voice key rendered without clipping on iPhone 17e and 17 Pro Max at standard and large content sizes; lighter shadows, VoiceOver names, and local-only placeholder feedback were verified |
 | 2026-07-15 | iOS-to-Rust live simulator smoke | Pass | The app authenticated with a disposable simulator credential, displayed current agents from the real Herdr socket, and enabled the D-pad, Enter, and Tab after explicit selection; placeholder taps remained local and no test input was sent |
 | 2026-07-15 | Unavailable-endpoint reconnect regression | Pass | Swift client now treats `Network.framework` waiting as a transport interruption; 16 package tests cover the bounded reconnect path |

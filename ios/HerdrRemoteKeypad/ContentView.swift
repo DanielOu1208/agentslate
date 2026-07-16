@@ -75,7 +75,7 @@ struct ContentView: View {
       } label: {
         Image(systemName: "slider.horizontal.3")
           .font(.system(size: 17, weight: .semibold))
-          .foregroundStyle(Palette.graphite)
+          .foregroundStyle(Palette.buttonIcon)
           .frame(width: 44, height: 44)
       }
       .buttonStyle(RoundControlStyle())
@@ -152,38 +152,88 @@ private struct AgentKey: View {
 
   var body: some View {
     Button(action: action) {
-      VStack(spacing: 5) {
-        HStack {
-          Circle()
-            .fill(selected ? .white.opacity(0.9) : agent.status.color)
-            .frame(width: 7, height: 7)
+      ZStack {
+        agentIcon
+          .frame(width: 28, height: 28)
+          .offset(y: -7)
+
+        VStack(spacing: 0) {
+          HStack {
+            Circle()
+              .fill(selected ? .white.opacity(0.9) : agent.status.color)
+              .frame(width: 7, height: 7)
+            Spacer(minLength: 0)
+          }
+
           Spacer(minLength: 0)
-        }
 
-        Spacer(minLength: 0)
-
-        Text(agent.name)
-          .font(.system(size: 14, weight: .bold, design: .rounded))
-          .lineLimit(1)
-          .minimumScaleFactor(0.65)
-
-        if let workspace = agent.workspace {
-          Text(workspace)
-            .font(.system(size: 9, weight: .semibold, design: .rounded))
-            .lineLimit(1)
-            .minimumScaleFactor(0.6)
-            .opacity(0.72)
+          if let folder = agentFolderName(cwd: agent.cwd, workspace: agent.workspace) {
+            Text(folder)
+              .font(.system(size: 8, weight: .semibold, design: .rounded))
+              .lineLimit(1)
+              .minimumScaleFactor(0.65)
+              .frame(maxWidth: .infinity)
+              .opacity(0.68)
+          }
         }
       }
-      .foregroundStyle(selected ? .white : Palette.graphite)
-      .padding(12)
+      .foregroundStyle(selected ? .white : Palette.buttonIcon)
+      .padding(11)
       .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
-    .buttonStyle(TactileKeyStyle(primary: selected))
+    .buttonStyle(TactileKeyStyle(primary: selected, dishOffsetY: -7))
     .accessibilityLabel(
-      "\(agent.name), \(agent.workspace ?? "unknown workspace"), \(agent.status.label)\(selected ? ", selected" : "")"
+      "\(agent.name), \(agentFolderName(cwd: agent.cwd, workspace: agent.workspace) ?? "unknown folder"), \(agent.status.label)\(selected ? ", selected" : "")"
     )
   }
+
+  @ViewBuilder private var agentIcon: some View {
+    if let asset = agentIconAssetName(for: agent.kind) {
+      Image(asset)
+        .renderingMode(.template)
+        .resizable()
+        .scaledToFit()
+    } else {
+      Image(systemName: "terminal.fill")
+        .resizable()
+        .scaledToFit()
+    }
+  }
+}
+
+func agentIconAssetName(for kind: String) -> String? {
+  switch kind.lowercased() {
+  case "pi": "AgentPi"
+  case "omp": "AgentOMP"
+  case "copilot": "AgentCopilot"
+  case "devin": "AgentDevin"
+  case "kimi": "AgentKimi"
+  case "hermes": "AgentHermes"
+  case "qoder", "qodercli": "AgentQoder"
+  case "droid": "AgentDroid"
+  case "opencode": "AgentOpenCode"
+  case "kilo": "AgentKilo"
+  case "mastracode": "AgentMastraCode"
+  case "claude": "AgentClaude"
+  case "codex": "AgentCodex"
+  case "cursor": "AgentCursor"
+  case "amp": "AgentAmp"
+  case "grok": "AgentGrok"
+  case "agy", "antigravity": "AgentAntigravity"
+  case "kiro": "AgentKiro"
+  case "maki": "AgentMaki"
+  case "gemini": "AgentGemini"
+  case "cline": "AgentCline"
+  default: nil
+  }
+}
+
+func agentFolderName(cwd: String?, workspace: String?) -> String? {
+  if let cwd, !cwd.isEmpty {
+    let folder = URL(fileURLWithPath: cwd).lastPathComponent
+    if !folder.isEmpty { return folder }
+  }
+  return workspace
 }
 
 private struct ControlBank: View {
@@ -361,7 +411,7 @@ private struct DPadDirection: View {
     } label: {
       Image(systemName: key.symbol)
         .font(.system(size: 25, weight: .semibold))
-        .foregroundStyle(Palette.graphite)
+        .foregroundStyle(Palette.buttonIcon)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
     }
@@ -375,7 +425,7 @@ private struct DPadDirectionStyle: ButtonStyle {
   func makeBody(configuration: Configuration) -> some View {
     ZStack {
       KeyDish()
-        .padding(8)
+        .frame(width: keyDishDiameter, height: keyDishDiameter)
       configuration.label
     }
     .offset(y: configuration.isPressed ? 2 : 0)
@@ -400,7 +450,7 @@ private struct RemoteKeyButton: View {
           .font(.system(size: 9, weight: .black, design: .rounded))
           .tracking(0.8)
       }
-      .foregroundStyle(Palette.graphite)
+      .foregroundStyle(Palette.buttonIcon)
       .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     .buttonStyle(TactileKeyStyle())
@@ -421,7 +471,7 @@ private struct PlaceholderKey: View {
     Button(action: action) {
       Image(systemName: symbol)
         .font(.system(size: 30, weight: .medium))
-        .foregroundStyle(Palette.graphite)
+        .foregroundStyle(Palette.buttonIcon)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     .buttonStyle(TactileKeyStyle())
@@ -432,6 +482,7 @@ private struct PlaceholderKey: View {
 
 private struct TactileKeyStyle: ButtonStyle {
   var primary = false
+  var dishOffsetY: CGFloat = 0
 
   func makeBody(configuration: Configuration) -> some View {
     ZStack {
@@ -453,7 +504,8 @@ private struct TactileKeyStyle: ButtonStyle {
         RoundedRectangle(cornerRadius: 21, style: .continuous)
           .stroke(primary ? .white.opacity(0.28) : .white.opacity(0.95), lineWidth: 1)
         KeyDish(primary: primary)
-          .padding(18)
+          .frame(width: keyDishDiameter, height: keyDishDiameter)
+          .offset(y: dishOffsetY)
         configuration.label
       }
       .offset(y: configuration.isPressed ? 3 : 0)
@@ -467,6 +519,8 @@ private struct TactileKeyStyle: ButtonStyle {
     .animation(.easeOut(duration: 0.09), value: configuration.isPressed)
   }
 }
+
+private let keyDishDiameter: CGFloat = 48
 
 private struct KeyDish: View {
   var primary = false
@@ -593,7 +647,7 @@ private enum Palette {
   static let keyFace = Color(red: 0.918, green: 0.936, blue: 0.955)
   static let keyLip = Color(red: 0.78, green: 0.81, blue: 0.85)
   static let line = Color(red: 0.817, green: 0.842, blue: 0.872)
-  static let graphite = Color(red: 0.055, green: 0.067, blue: 0.086)
+  static let buttonIcon = Color(red: 0.18, green: 0.20, blue: 0.24)
   static let secondaryText = Color(red: 0.32, green: 0.35, blue: 0.4)
   static let shadow = Color(red: 0.15, green: 0.19, blue: 0.24)
   static let blue = Color(red: 0.045, green: 0.365, blue: 1)

@@ -179,6 +179,7 @@ private final class FakeBridge: @unchecked Sendable {
       "agents": [
         [
           "id": "w1:p1",
+          "kind": "codex",
           "name": "codex",
           "status": "blocked",
           "title": "Approve command",

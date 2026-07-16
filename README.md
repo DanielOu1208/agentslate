@@ -13,7 +13,7 @@ This repository contains the working Rust bridge, command-line probe, reusable S
 - Report Herdr availability and recover after Herdr or the network becomes unavailable.
 - Use the same protocol from the Rust probe or the Swift `HerdrRemoteClient` package.
 - Configure the bridge manually on iPhone with Keychain-backed token storage.
-- Select and focus a live agent from a four-column square grid, then use a tactile D-pad, Enter, and Tab control bank.
+- Select and focus a live agent from a four-column icon grid with compact working-folder labels, then use a tactile D-pad, Enter, and Tab control bank.
 - Preview active-looking Accept, Deny, and Voice keys with local press feedback while their remote integrations remain deferred.
 
 Terminal output is intentionally not sent to the phone. The keypad is designed for use while the agent's screen remains visible elsewhere.

@@ -80,6 +80,7 @@ Complete agent snapshot:
   "agents":[
     {
       "id":"w1:p1",
+      "kind":"codex",
       "name":"codex",
       "status":"working",
       "title":"Fix authentication tests",
@@ -89,6 +90,8 @@ Complete agent snapshot:
   ]
 }
 ```
+
+`kind` is the stable agent implementation identifier used for behavior and icon selection. `name` is the user-facing label and may be renamed.
 
 The bridge pushes this event after authentication and whenever normalized agent state changes. A snapshot requested with `request_snapshot` has the same fields but repeats the request's `id` instead of using `event_id`.
 

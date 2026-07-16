@@ -80,6 +80,7 @@ impl ClientMessage {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Agent {
     pub id: String,
+    pub kind: String,
     pub name: String,
     pub status: String,
     pub title: Option<String>,

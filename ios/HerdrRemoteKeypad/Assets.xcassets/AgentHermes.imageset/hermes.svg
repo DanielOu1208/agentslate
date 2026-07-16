@@ -1,0 +1,11 @@
+<svg fill="none" height="24" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg">
+  <title>Hermes Agent</title>
+  <g stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8">
+    <path d="M12 3v18"/>
+    <path d="M9.7 4.2 7 2.8c.1 2 1.2 3.3 3.2 3.8"/>
+    <path d="m14.3 4.2 2.7-1.4c-.1 2-1.2 3.3-3.2 3.8"/>
+    <path d="M8.4 8.2c0 1.6 1.4 2.1 3.6 3.1 2.2 1 3.6 1.6 3.6 3.2 0 1.4-1.2 2.4-3.1 2.8"/>
+    <path d="M15.6 8.2c0 1.6-1.4 2.1-3.6 3.1-2.2 1-3.6 1.6-3.6 3.2 0 1.4 1.2 2.4 3.1 2.8"/>
+    <path d="M9.5 21h5"/>
+  </g>
+</svg>

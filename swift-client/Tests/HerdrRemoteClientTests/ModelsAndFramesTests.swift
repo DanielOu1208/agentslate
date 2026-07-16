@@ -5,9 +5,11 @@ import Testing
 
 @Test func agentFixturesAndUnknownStatus() throws {
   let data = Data(
-    #"{"id":"w1:p1","name":"codex","status":"paused","title":null,"workspace":"demo","cwd":"/tmp","future_field":true}"#
+    #"{"id":"w1:p1","kind":"codex","name":"reviewer","status":"paused","title":null,"workspace":"demo","cwd":"/tmp","future_field":true}"#
       .utf8)
   let agent = try JSONDecoder().decode(BridgeAgent.self, from: data)
+  #expect(agent.kind == "codex")
+  #expect(agent.name == "reviewer")
   #expect(agent.status == .unknown("paused"))
   #expect(agent.workspace == "demo")
 }

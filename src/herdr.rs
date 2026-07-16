@@ -76,6 +76,7 @@ impl Snapshot {
             .iter()
             .map(|agent| Agent {
                 id: agent.pane_id.clone(),
+                kind: agent.agent.clone(),
                 name: agent
                     .display_agent
                     .clone()
@@ -251,6 +252,7 @@ mod tests {
 
         let snapshot = HerdrClient::new(socket.clone()).snapshot().await.unwrap();
         let agents = snapshot.normalized_agents();
+        assert_eq!(agents[0].kind, "codex");
         assert_eq!(agents[0].name, "codex");
         assert_eq!(agents[0].workspace.as_deref(), Some("api"));
         server.await.unwrap();
