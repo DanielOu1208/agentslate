@@ -7,9 +7,77 @@ enum VoiceState: Equatable {
   case notPrepared
   case preparing
   case ready
+  case starting
   case listening
   case finalizing
   case failed(String)
+}
+
+enum VoiceReleaseAction: Equatable {
+  case send
+  case cancel
+  case edit
+
+  static func classify(
+    _ location: CGPoint, cancelTarget: CGRect, editTarget: CGRect
+  ) -> Self {
+    if cancelTarget.contains(location) { return .cancel }
+    if editTarget.contains(location) { return .edit }
+    return .send
+  }
+}
+
+struct VoiceDraft: Identifiable, Equatable {
+  let id = UUID()
+  let text: String
+  let agentID: String
+  let agentName: String
+  let session: String
+
+  func matches(agentID: String?, session: String?, available: Bool) -> Bool {
+    available && self.agentID == agentID && self.session == session
+  }
+}
+
+enum VoiceTextIssue: Equatable {
+  case blank
+  case controlCharacters
+  case tooLarge
+}
+
+struct VoiceTextValidation: Equatable {
+  let normalizedText: String
+  let byteCount: Int
+  let issue: VoiceTextIssue?
+
+  var isValid: Bool { issue == nil }
+}
+
+func validateVoiceDraftText(_ text: String) -> VoiceTextValidation {
+  var normalized = ""
+  var previousWasCarriageReturn = false
+  for scalar in text.unicodeScalars {
+    if CharacterSet.newlines.contains(scalar) {
+      if !(scalar.value == 10 && previousWasCarriageReturn) { normalized.append(" ") }
+      previousWasCarriageReturn = scalar.value == 13
+    } else {
+      normalized.unicodeScalars.append(scalar)
+      previousWasCarriageReturn = false
+    }
+  }
+  normalized = normalized.trimmingCharacters(in: .whitespacesAndNewlines)
+  let byteCount = normalized.utf8.count
+  let issue: VoiceTextIssue? =
+    if normalized.isEmpty {
+      .blank
+    } else if normalized.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) {
+      .controlCharacters
+    } else if byteCount > 8_192 {
+      .tooLarge
+    } else {
+      nil
+    }
+  return VoiceTextValidation(normalizedText: normalized, byteCount: byteCount, issue: issue)
 }
 
 @MainActor
@@ -28,6 +96,7 @@ final class AppModel {
   private(set) var configuredToken: String
   private(set) var voiceState: VoiceState = .notPrepared
   private(set) var partialTranscript = ""
+  private(set) var voiceDraft: VoiceDraft?
 
   @ObservationIgnored private var client: BridgeClient?
   @ObservationIgnored private var eventTask: Task<Void, Never>?
@@ -37,6 +106,7 @@ final class AppModel {
   @ObservationIgnored private var voiceEndInProgress = false
   @ObservationIgnored private var voiceCancelInProgress = false
   @ObservationIgnored private var voiceSessionGeneration = 0
+  @ObservationIgnored private var voiceTarget: (agentID: String, agentName: String, session: String)?
   @ObservationIgnored private var agentsBySession: [String: [BridgeAgent]] = [:]
   @ObservationIgnored private var availabilityBySession: [String: HerdrAvailability] = [:]
 
@@ -151,19 +221,54 @@ final class AppModel {
     }
   }
 
-  func send(text: String, submit: Bool = true) async {
+  @discardableResult
+  func send(text: String, submit: Bool = true) async -> Bool {
     guard canSend, let client, let selectedAgentID, let session = selectedSessionName else {
-      return
+      return false
     }
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty else { return }
+    guard !trimmed.isEmpty else { return false }
+    return await send(
+      text: trimmed, submit: submit, to: selectedAgentID, session: session, client: client)
+  }
+
+  @discardableResult
+  func sendVoiceDraft(_ draft: VoiceDraft, text: String) async -> Bool {
+    let validation = validateVoiceDraftText(text)
+    guard validation.isValid,
+      draft.matches(
+        agentID: selectedAgentID, session: selectedSessionName, available: canSend),
+      let client
+    else { return false }
+    return await send(
+      text: validation.normalizedText,
+      submit: true,
+      to: draft.agentID,
+      session: draft.session,
+      client: client
+    )
+  }
+
+  func discardVoiceDraft() {
+    voiceDraft = nil
+  }
+
+  private func send(
+    text: String,
+    submit: Bool,
+    to agentID: String,
+    session: String,
+    client: BridgeClient
+  ) async -> Bool {
     do {
       try await client.send(
-        text: trimmed, submit: submit, to: selectedAgentID, session: session)
+        text: text, submit: submit, to: agentID, session: session)
       errorMessage = nil
       successFeedback += 1
+      return true
     } catch {
       report(error)
+      return false
     }
   }
 
@@ -171,6 +276,7 @@ final class AppModel {
     guard
       voiceState != .preparing,
       voiceState != .ready,
+      voiceState != .starting,
       voiceState != .listening,
       voiceState != .finalizing
     else {
@@ -193,6 +299,8 @@ final class AppModel {
   func beginVoice() {
     guard
       canSend,
+      let selectedAgent,
+      let selectedSessionName,
       voiceState == .ready,
       voiceStartTask == nil,
       !voiceEndInProgress,
@@ -201,6 +309,8 @@ final class AppModel {
     voiceSessionGeneration &+= 1
     let generation = voiceSessionGeneration
     partialTranscript = ""
+    voiceTarget = (selectedAgent.id, selectedAgent.name, selectedSessionName)
+    voiceState = .starting
     voiceStartTask = Task { [weak self] in
       guard let self else { return }
       do {
@@ -236,10 +346,14 @@ final class AppModel {
     }
   }
 
-  func endVoiceAndSend() async {
+  func finishVoice(_ action: VoiceReleaseAction) async {
+    if action == .cancel {
+      await cancelVoice()
+      return
+    }
     guard
       !voiceEndInProgress,
-      voiceState == .listening || voiceStartTask != nil
+      voiceState == .starting || voiceState == .listening || voiceStartTask != nil
     else { return }
     voiceEndInProgress = true
     let generation = voiceSessionGeneration
@@ -258,15 +372,37 @@ final class AppModel {
       let text = try await dictation.finalize()
       guard generation == voiceSessionGeneration, !Task.isCancelled else { return }
       let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-      if !trimmed.isEmpty {
-        await send(text: trimmed, submit: true)
+      if let voiceTarget {
+        if action == .edit {
+          voiceDraft = VoiceDraft(
+            text: trimmed,
+            agentID: voiceTarget.agentID,
+            agentName: voiceTarget.agentName,
+            session: voiceTarget.session
+          )
+        } else if !trimmed.isEmpty,
+          canSend,
+          selectedAgentID == voiceTarget.agentID,
+          selectedSessionName == voiceTarget.session,
+          let client
+        {
+          _ = await send(
+            text: trimmed,
+            submit: true,
+            to: voiceTarget.agentID,
+            session: voiceTarget.session,
+            client: client
+          )
+        }
       }
       guard generation == voiceSessionGeneration else { return }
       voiceState = .ready
       partialTranscript = ""
+      voiceTarget = nil
     } catch is CancellationError {
       if generation == voiceSessionGeneration {
         voiceState = dictation.isPrepared ? .ready : .notPrepared
+        voiceTarget = nil
       }
     } catch {
       if generation == voiceSessionGeneration {
@@ -278,7 +414,8 @@ final class AppModel {
   func cancelVoice() async {
     guard
       !voiceCancelInProgress,
-      voiceState == .listening || voiceState == .finalizing || voiceStartTask != nil
+      voiceState == .starting || voiceState == .listening || voiceState == .finalizing
+        || voiceStartTask != nil
     else { return }
     voiceCancelInProgress = true
     defer { voiceCancelInProgress = false }
@@ -292,6 +429,7 @@ final class AppModel {
     voiceStartTask = nil
     voiceState = dictation.isPrepared ? .ready : .notPrepared
     partialTranscript = ""
+    voiceTarget = nil
   }
 
   func apply(_ event: BridgeEvent) {
@@ -389,6 +527,7 @@ final class AppModel {
     partialTranscript = dictation.lastPartial
     if voiceState != failedState { errorFeedback += 1 }
     voiceState = failedState
+    voiceTarget = nil
   }
 }
 

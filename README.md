@@ -15,12 +15,12 @@ This repository contains the working Rust bridge, command-line probe, reusable S
 - Use the same protocol from the Rust probe or the Swift `HerdrRemoteClient` package.
 - Configure the bridge manually on iPhone with Keychain-backed token storage.
 - Select a Herdr session from the header, then select and focus a live agent from a four-column icon grid with compact working-folder labels.
-- Hold the Voice key to dictate on-device; release to send text plus Enter to the selected agent.
+- Hold the Voice key to dictate on-device. Release normally to send text plus Enter, drag to the red upper-left Cancel target to discard, or drag to the blue upper-right Edit target to review and edit before sending.
 - Use agent-aware Accept and Deny shortcuts for blocked Codex, Claude Code, OMP, Cursor, and OpenCode panes while watching the agent's screen.
 
 Terminal output is intentionally not sent to the phone. The keypad is designed for use while the agent's screen remains visible elsewhere. Accept and Deny send each supported agent's default terminal shortcut; they do not inspect or identify the permission request, so they are a watched-screen convenience rather than verified authorization.
 
-Voice prepares after an existing configuration loads, or after a new Bridge setup is saved and dismissed. The app requests microphone access only; speech recognition and its model stay on the iPhone. With VoiceOver, activate Voice once to start, activate it again to send, or use the Cancel dictation action.
+Voice prepares after an existing configuration loads, or after a new Bridge setup is saved and dismissed. The app requests microphone access only; speech recognition and its model stay on the iPhone. An edited draft can send only while its original agent and Herdr session remain selected and available. With VoiceOver, activate Voice once to start and again to send, or use the named Edit dictation and Cancel dictation actions.
 
 ## Build and test
 

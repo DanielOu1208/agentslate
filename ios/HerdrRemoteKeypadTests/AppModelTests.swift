@@ -1,4 +1,5 @@
 import HerdrRemoteClient
+import CoreGraphics
 import Testing
 
 @testable import HerdrRemoteKeypad
@@ -105,4 +106,84 @@ func sessionSelectionRestoresAndFallsBackWithoutMacAction() {
   model.apply(.sessions([defaultSession]))
   #expect(model.selectedSessionName == "default")
   #expect(model.agents == [defaultAgent])
+}
+
+@Test
+func voiceTargetsUseTheirDisplayedRectangles() {
+  let frames = VoiceTargetLayout.frames(
+    in: CGSize(width: 390, height: 844),
+    contentWidth: 354,
+    gap: 12,
+    targetHeight: 82
+  )
+
+  #expect(frames.cancel.size == frames.edit.size)
+  #expect(
+    VoiceReleaseAction.classify(
+      CGPoint(x: frames.cancel.midX, y: frames.cancel.midY),
+      cancelTarget: frames.cancel,
+      editTarget: frames.edit
+    ) == .cancel)
+  #expect(
+    VoiceReleaseAction.classify(
+      CGPoint(x: frames.edit.midX, y: frames.edit.midY),
+      cancelTarget: frames.cancel,
+      editTarget: frames.edit
+    ) == .edit)
+
+  let cancelMinimumBoundary = CGPoint(x: frames.cancel.minX, y: frames.cancel.minY)
+  let cancelMaximumBoundary = CGPoint(x: frames.cancel.maxX, y: frames.cancel.maxY)
+  #expect(
+    VoiceReleaseAction.classify(
+      cancelMinimumBoundary, cancelTarget: frames.cancel, editTarget: frames.edit) == .cancel)
+  #expect(
+    VoiceReleaseAction.classify(
+      cancelMaximumBoundary, cancelTarget: frames.cancel, editTarget: frames.edit) == .send)
+}
+
+@Test
+func voiceTargetArmingReturnsToSendOutsideTargets() {
+  let cancel = CGRect(x: 0, y: 0, width: 100, height: 100)
+  let edit = CGRect(x: 120, y: 0, width: 100, height: 100)
+  let locations = [
+    CGPoint(x: 50, y: 50),
+    CGPoint(x: 110, y: 50),
+    CGPoint(x: 170, y: 50),
+    CGPoint(x: 170, y: 110),
+  ]
+  let actions = locations.map {
+    VoiceReleaseAction.classify($0, cancelTarget: cancel, editTarget: edit)
+  }
+  #expect(actions == [.cancel, .send, .edit, .send])
+}
+
+@Test
+func voiceDraftTextNormalizesAndValidatesInput() {
+  let normalized = validateVoiceDraftText("  first\r\nsecond\nthird  ")
+  #expect(normalized.normalizedText == "first second third")
+  #expect(normalized.isValid)
+
+  #expect(validateVoiceDraftText(" \n \r ").issue == .blank)
+  #expect(validateVoiceDraftText("hello\tworld").issue == .controlCharacters)
+}
+
+@Test
+func voiceDraftTextCountsEmojiUTF8Bytes() {
+  let atLimit = validateVoiceDraftText(String(repeating: "🙂", count: 2_048))
+  #expect(atLimit.byteCount == 8_192)
+  #expect(atLimit.isValid)
+
+  let overLimit = validateVoiceDraftText(String(repeating: "🙂", count: 2_049))
+  #expect(overLimit.byteCount == 8_196)
+  #expect(overLimit.issue == .tooLarge)
+}
+
+@Test
+func voiceDraftOnlyMatchesItsOriginalSelectedTarget() {
+  let draft = VoiceDraft(
+    text: "review me", agentID: "agent-1", agentName: "Codex", session: "default")
+  #expect(draft.matches(agentID: "agent-1", session: "default", available: true))
+  #expect(!draft.matches(agentID: "agent-2", session: "default", available: true))
+  #expect(!draft.matches(agentID: "agent-1", session: "other", available: true))
+  #expect(!draft.matches(agentID: "agent-1", session: "default", available: false))
 }

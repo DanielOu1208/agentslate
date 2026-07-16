@@ -56,13 +56,13 @@ The first phone build adds:
 - a native header menu for choosing among running Herdr sessions;
 - a connected D-pad, Enter, Tab, Escape, Shift+Tab, and haptics;
 - watched-screen Accept and Deny shortcuts for blocked Codex, Claude Code, OMP, Cursor, and OpenCode agents;
-- hold-to-talk Voice that converts speech on-device and sends text plus Enter to the selected agent;
+- hold-to-talk Voice with normal send, visible drag-to-Cancel and drag-to-Edit outcomes, plus a native review editor;
 - connection state, automatic reconnect, and disabled controls when unavailable;
 - manual bridge address and token entry with Keychain storage.
 
 ### Complete MVP
 
-The complete MVP additionally includes typed instructions and hold-to-talk local speech recognition. It is complete when an iPhone can select among at least three agents, operate approvals and pickers, send typed and spoken instructions, reconnect, and reject unauthenticated input.
+The complete MVP additionally includes editable spoken instructions and hold-to-talk local speech recognition. It is complete when an iPhone can select among at least three agents, operate approvals and pickers, review and send spoken instructions, reconnect, and reject unauthenticated input.
 
 ## Functional requirements
 
@@ -92,13 +92,16 @@ The complete MVP additionally includes typed instructions and hold-to-talk local
 ### Voice and speech
 
 - Use Apple's on-device SpeechAnalyzer and DictationTranscriber (iOS 26+) for hold-to-talk dictation.
-- Default to hold, speak, release, then send text plus Enter through the existing bridge `send_text` path.
+- Default to hold, speak, and release to send text plus Enter through the existing bridge `send_text` path.
+- While holding, show only two visible alternate release targets: upper-left Cancel discards and upper-right Edit finalizes into an in-memory review sheet. Leaving either target restores Send.
+- Keep the microphone sharp and interactive while the blocked keypad is blurred and dimmed; show live, auto-scrolling transcript text and an outcome-colored border that respects Reduce Motion.
+- Let the review sheet edit multi-line text, convert line breaks to spaces, reject blank/control-character/over-8,192-byte input, and retain failed or disconnected drafts for retry.
+- Bind an Edit draft to the agent and session captured when recording began; send only while that exact target remains selected and available.
 - Prepare speech after saved bridge setup is available so the first press does not perform model setup.
 - Request microphone access with the native asynchronous audio API; do not request the legacy speech-recognition permission.
 - Cancel capture when the gesture is interrupted or the app leaves the foreground, and never send partial text after a recognition or finalization failure.
-- With VoiceOver, use one activation to start, a second to send, and a separate Cancel dictation action.
+- With VoiceOver, use one activation to start, a second to send, and named Edit dictation and Cancel dictation actions while keeping the same talking presentation.
 - Keep audio on the phone; never stream microphone audio through the Herdr bridge.
-- Provide review-before-send as a safer later option.
 - Keep text-to-speech out of the initial keypad release because the external screen remains the source of context.
 
 ### Connection and security
@@ -138,4 +141,4 @@ The complete MVP additionally includes typed instructions and hold-to-talk local
 - The shared Swift package targets iOS 18 and newer.
 - The iPhone app targets iOS 26 and newer so it can use SpeechAnalyzer for on-device dictation.
 - Dedicated Accept and Deny keys are watched-screen default-keymap conveniences for five supported agent kinds; they are not structured authorization and remain disabled unless the selected agent is blocked.
-- The Voice key uses on-device hold-to-talk dictation and sends finalized text through the bridge.
+- The Voice key uses on-device hold-to-talk dictation with Send, Cancel, and editable review outcomes; finalized sends reuse the existing bridge text route.

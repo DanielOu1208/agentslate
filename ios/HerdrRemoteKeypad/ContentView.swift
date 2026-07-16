@@ -6,57 +6,115 @@ struct ContentView: View {
   @State private var model = AppModel()
   @State private var showingSettings = false
   @State private var placeholderFeedback = 0
+  @State private var armedVoiceAction = VoiceReleaseAction.send
+  @State private var voiceSelectionFeedback = 0
 
   var body: some View {
     GeometryReader { geometry in
       let width = min(geometry.size.width - 36, 444)
       let gap: CGFloat = 12
       let cell = (width - gap * 3) / 4
+      let targets = VoiceTargetLayout.frames(
+        in: geometry.size, contentWidth: width, gap: gap, targetHeight: cell)
+      let talking = model.voiceState.isTalking
 
       ZStack {
-        Palette.canvas.ignoresSafeArea()
+        Group {
+          Palette.canvas.ignoresSafeArea()
 
-        VStack(spacing: 0) {
-          statusBar
-            .padding(.bottom, gap)
-          AgentGrid(
-            agents: model.displayAgents,
-            selectedAgentID: model.selectedAgentID,
-            cell: cell,
-            gap: gap,
-            select: { agent in Task { await model.select(agent) } },
-            tapPlaceholder: tapPlaceholder
-          )
+          VStack(spacing: 0) {
+            statusBar
+              .padding(.bottom, gap)
+            AgentGrid(
+              agents: model.displayAgents,
+              selectedAgentID: model.selectedAgentID,
+              cell: cell,
+              gap: gap,
+              select: { agent in Task { await model.select(agent) } },
+              tapPlaceholder: tapPlaceholder
+            )
 
-          Spacer(minLength: gap * 2)
+            Spacer(minLength: gap * 2)
 
-          ControlBank(
-            cell: cell,
-            gap: gap,
-            enabled: model.canSend,
-            actionEnabled: model.canSendAction,
-            voiceState: model.voiceState,
-            partialTranscript: model.partialTranscript,
-            send: { key in Task { await model.send(key) } },
-            sendAction: { action in Task { await model.send(action) } },
-            beginVoice: { model.beginVoice() },
-            endVoice: { Task { await model.endVoiceAndSend() } },
-            cancelVoice: { Task { await model.cancelVoice() } },
-            retryVoice: { Task { await model.prepareVoice() } }
-          )
+            ControlBank(
+              cell: cell,
+              gap: gap,
+              enabled: model.canSend,
+              actionEnabled: model.canSendAction,
+              voiceState: model.voiceState,
+              partialTranscript: model.partialTranscript,
+              send: { key in Task { await model.send(key) } },
+              sendAction: { action in Task { await model.send(action) } },
+              retryVoice: { Task { await model.prepareVoice() } }
+            )
+          }
+          .frame(width: width)
+          .padding(.top, 8)
+          .padding(.bottom, 20)
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(width: width)
-        .padding(.top, 8)
-        .padding(.bottom, 20)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .blur(radius: talking ? 5 : 0)
+        .allowsHitTesting(!talking)
+        .accessibilityHidden(talking)
+
+        if talking {
+          Color.black.opacity(0.24)
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+
+          TalkingPresentation(
+            state: model.voiceState,
+            transcript: model.partialTranscript,
+            action: armedVoiceAction,
+            targets: targets,
+            contentWidth: width
+          )
+          .allowsHitTesting(false)
+        }
+
+        VStack {
+          Spacer()
+          VoiceKey(
+            enabled: model.canSend
+              && (model.voiceState == .ready || model.voiceState.isTalking),
+            isListening: talking,
+            cancelTarget: targets.cancel,
+            editTarget: targets.edit,
+            beginVoice: {
+              armedVoiceAction = .send
+              model.beginVoice()
+            },
+            releaseVoice: { action in
+              Task {
+                await model.finishVoice(action)
+                armedVoiceAction = .send
+              }
+            },
+            cancelVoice: { Task { await model.cancelVoice() } },
+            armVoice: armVoice
+          )
+          .frame(width: cell * 2 + gap, height: cell)
+          .padding(.bottom, 20)
+        }
       }
+      .coordinateSpace(name: VoiceTargetLayout.coordinateSpace)
     }
     .tint(Palette.blue)
     .sensoryFeedback(.success, trigger: model.successFeedback)
     .sensoryFeedback(.error, trigger: model.errorFeedback)
     .sensoryFeedback(.impact(weight: .medium), trigger: placeholderFeedback)
+    .sensoryFeedback(.selection, trigger: voiceSelectionFeedback)
     .sheet(isPresented: $showingSettings) {
       SettingsView(model: model)
+    }
+    .sheet(
+      item: Binding(
+        get: { model.voiceDraft },
+        set: { if $0 == nil { model.discardVoiceDraft() } }
+      )
+    ) { draft in
+      VoiceReviewView(model: model, draft: draft)
+        .presentationDetents([.large])
     }
     .task {
       model.start()
@@ -85,6 +143,12 @@ struct ContentView: View {
 
   private func tapPlaceholder() {
     placeholderFeedback += 1
+  }
+
+  private func armVoice(_ action: VoiceReleaseAction) {
+    guard action != armedVoiceAction else { return }
+    armedVoiceAction = action
+    voiceSelectionFeedback += 1
   }
 
   private var statusBar: some View {
@@ -412,9 +476,6 @@ private struct ControlBank: View {
   let partialTranscript: String
   let send: (RemoteKey) -> Void
   let sendAction: (RemoteAction) -> Void
-  let beginVoice: () -> Void
-  let endVoice: () -> Void
-  let cancelVoice: () -> Void
   let retryVoice: () -> Void
 
   private var columns: [GridItem] {
@@ -444,20 +505,15 @@ private struct ControlBank: View {
         .frame(width: cell * 2 + gap)
       }
 
-      VoiceKey(
-        enabled: enabled && (voiceState == .ready || voiceState == .listening),
-        isListening: voiceState == .listening,
-        beginVoice: beginVoice,
-        endVoice: endVoice,
-        cancelVoice: cancelVoice
-      )
+      Color.clear
+        .accessibilityHidden(true)
       .frame(width: cell * 2 + gap, height: cell)
     }
   }
 
   private var showsVoiceStatus: Bool {
     switch voiceState {
-    case .preparing, .listening, .finalizing, .failed:
+    case .preparing, .starting, .listening, .finalizing, .failed:
       true
     case .notPrepared, .ready:
       !partialTranscript.isEmpty
@@ -472,6 +528,10 @@ private struct ControlBank: View {
         Text("Preparing voice…")
           .foregroundStyle(Palette.secondaryText)
           .accessibilityLabel("Preparing voice")
+      case .starting:
+        Text("Starting microphone…")
+          .foregroundStyle(Palette.secondaryText)
+          .accessibilityLabel("Starting microphone")
       case .listening:
         Text(partialTranscript.isEmpty ? "Listening…" : partialTranscript)
           .foregroundStyle(Palette.secondaryText)
@@ -510,9 +570,12 @@ private struct ControlBank: View {
 private struct VoiceKey: View {
   let enabled: Bool
   let isListening: Bool
+  let cancelTarget: CGRect
+  let editTarget: CGRect
   let beginVoice: () -> Void
-  let endVoice: () -> Void
+  let releaseVoice: (VoiceReleaseAction) -> Void
   let cancelVoice: () -> Void
+  let armVoice: (VoiceReleaseAction) -> Void
 
   @GestureState private var isPressed = false
   @State private var isHolding = false
@@ -530,14 +593,35 @@ private struct VoiceKey: View {
       }
       .contentShape(RoundedRectangle(cornerRadius: 21, style: .continuous))
       .gesture(
-        DragGesture(minimumDistance: 0)
+        DragGesture(
+          minimumDistance: 0,
+          coordinateSpace: .named(VoiceTargetLayout.coordinateSpace)
+        )
           .updating($isPressed) { _, pressed, _ in
             pressed = true
           }
-          .onEnded { _ in
+          .onChanged { value in
+            guard isHolding else { return }
+            armVoice(
+              .classify(
+                value.location,
+                cancelTarget: cancelTarget,
+                editTarget: editTarget
+              ))
+          }
+          .onEnded { value in
             guard isHolding else { return }
             isHolding = false
-            if enabled { endVoice() } else { cancelVoice() }
+            guard enabled else {
+              cancelVoice()
+              return
+            }
+            releaseVoice(
+              .classify(
+                value.location,
+                cancelTarget: cancelTarget,
+                editTarget: editTarget
+              ))
           }
       )
       .onChange(of: isPressed) { wasPressed, isPressed in
@@ -554,23 +638,173 @@ private struct VoiceKey: View {
       .accessibilityLabel("Voice")
       .accessibilityHint(
         isListening
-          ? "Activate to send the dictation and Enter to the selected agent."
-          : "Hold to speak and release to send. With VoiceOver, activate once to start."
+          ? "Activate to send, or use the Edit dictation or Cancel dictation actions."
+          : "Hold to speak and release to send. Drag to a visible Edit or Cancel target before releasing. With VoiceOver, activate once to start."
       )
       .accessibilityAddTraits([.isButton, .startsMediaSession])
       .accessibilityAction(.default) {
         guard enabled || isListening else { return }
         if isListening {
-          enabled ? endVoice() : cancelVoice()
+          enabled ? releaseVoice(.send) : cancelVoice()
         } else {
           beginVoice()
         }
       }
       .accessibilityActions {
         if isListening {
+          Button("Edit dictation") { releaseVoice(.edit) }
           Button("Cancel dictation", action: cancelVoice)
         }
       }
+  }
+}
+
+private extension VoiceState {
+  var isTalking: Bool {
+    self == .starting || self == .listening
+  }
+}
+
+struct VoiceTargetFrames: Equatable {
+  let cancel: CGRect
+  let edit: CGRect
+}
+
+enum VoiceTargetLayout {
+  static let coordinateSpace = "voiceInteraction"
+
+  static func frames(
+    in size: CGSize,
+    contentWidth: CGFloat,
+    gap: CGFloat,
+    targetHeight: CGFloat
+  ) -> VoiceTargetFrames {
+    let width = (contentWidth - gap) / 2
+    let left = (size.width - contentWidth) / 2
+    return VoiceTargetFrames(
+      cancel: CGRect(x: left, y: 8, width: width, height: targetHeight),
+      edit: CGRect(x: left + width + gap, y: 8, width: width, height: targetHeight)
+    )
+  }
+}
+
+private struct TalkingPresentation: View {
+  let state: VoiceState
+  let transcript: String
+  let action: VoiceReleaseAction
+  let targets: VoiceTargetFrames
+  let contentWidth: CGFloat
+
+  var body: some View {
+    GeometryReader { geometry in
+      ZStack {
+        TalkingBorder(action: action)
+
+        VoiceReleaseTarget(action: .cancel, armed: action == .cancel)
+          .frame(width: targets.cancel.width, height: targets.cancel.height)
+          .position(x: targets.cancel.midX, y: targets.cancel.midY)
+
+        VoiceReleaseTarget(action: .edit, armed: action == .edit)
+          .frame(width: targets.edit.width, height: targets.edit.height)
+          .position(x: targets.edit.midX, y: targets.edit.midY)
+
+        VoiceTranscript(
+          text: displayedTranscript
+        )
+        .frame(width: contentWidth, height: max(120, geometry.size.height * 0.42))
+        .position(
+          x: geometry.size.width / 2,
+          y: targets.cancel.maxY + max(120, geometry.size.height * 0.42) / 2 + 12
+        )
+      }
+    }
+  }
+
+  private var displayedTranscript: String {
+    if state == .starting { return "Starting microphone…" }
+    return transcript.isEmpty ? "Listening…" : transcript
+  }
+}
+
+private struct VoiceReleaseTarget: View {
+  let action: VoiceReleaseAction
+  let armed: Bool
+
+  var body: some View {
+    VStack(spacing: 7) {
+      Image(systemName: action == .cancel ? "xmark" : "pencil")
+        .font(.system(size: 28, weight: .bold))
+      Text(action == .cancel ? "Cancel" : "Edit")
+        .font(.headline)
+    }
+    .foregroundStyle(.white)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .background(color.opacity(armed ? 0.95 : 0.68), in: RoundedRectangle(cornerRadius: 21))
+    .overlay {
+      RoundedRectangle(cornerRadius: 21)
+        .stroke(.white.opacity(armed ? 0.95 : 0.45), lineWidth: armed ? 3 : 1)
+    }
+    .scaleEffect(armed ? 1.03 : 1)
+    .animation(.easeOut(duration: 0.12), value: armed)
+    .accessibilityHidden(true)
+  }
+
+  private var color: Color {
+    action == .cancel ? Palette.blocked : Palette.blueHighlight
+  }
+}
+
+private struct VoiceTranscript: View {
+  let text: String
+
+  var body: some View {
+    ScrollViewReader { proxy in
+      ScrollView {
+        Text(text)
+          .font(.system(.largeTitle, design: .rounded, weight: .semibold))
+          .foregroundStyle(.white)
+          .multilineTextAlignment(.center)
+          .frame(maxWidth: .infinity)
+          .padding(.horizontal, 12)
+        Color.clear.frame(height: 1).id("transcriptEnd")
+      }
+      .scrollIndicators(.hidden)
+      .onChange(of: text) { _, _ in
+        withAnimation(.easeOut(duration: 0.15)) {
+          proxy.scrollTo("transcriptEnd", anchor: .bottom)
+        }
+      }
+    }
+    .accessibilityLabel(text)
+  }
+}
+
+private struct TalkingBorder: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  let action: VoiceReleaseAction
+
+  var body: some View {
+    RoundedRectangle(cornerRadius: 28)
+      .inset(by: 4)
+      .stroke(color, lineWidth: 4)
+      .shadow(color: color.opacity(0.85), radius: 14)
+      .phaseAnimator(reduceMotion ? [false] : [false, true]) { border, bright in
+        border.opacity(bright ? 1 : 0.58)
+      } animation: { _ in
+        .easeInOut(duration: 0.6)
+      }
+      .padding(4)
+      .ignoresSafeArea()
+      .accessibilityHidden(true)
+  }
+
+  private var color: Color {
+    switch action {
+    case .send: Palette.blue
+    case .cancel: Palette.blocked
+    case .edit: Color(red: 0.35, green: 0.65, blue: 1)
+    }
   }
 }
 
@@ -916,6 +1150,112 @@ private struct RoundControlStyle: ButtonStyle {
         .offset(y: configuration.isPressed ? 2 : 0)
     }
     .shadow(color: Palette.shadow.opacity(0.08), radius: 3, y: 3)
+  }
+}
+
+private struct VoiceReviewView: View {
+  let model: AppModel
+  let draft: VoiceDraft
+
+  @State private var text: String
+  @State private var selection: TextSelection?
+  @State private var sendError: String?
+  @State private var isSending = false
+  @FocusState private var editorFocused: Bool
+
+  init(model: AppModel, draft: VoiceDraft) {
+    self.model = model
+    self.draft = draft
+    _text = State(initialValue: draft.text)
+  }
+
+  var body: some View {
+    NavigationStack {
+      VStack(alignment: .leading, spacing: 12) {
+        LabeledContent("Agent", value: draft.agentName)
+        LabeledContent("Session", value: draft.session)
+
+        TextEditor(text: $text, selection: $selection)
+          .focused($editorFocused)
+          .font(.body)
+          .padding(8)
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .background(.background, in: RoundedRectangle(cornerRadius: 12))
+          .overlay {
+            RoundedRectangle(cornerRadius: 12)
+              .stroke(Palette.line, lineWidth: 1)
+          }
+          .onChange(of: text) { _, _ in sendError = nil }
+
+        if let message = validationMessage {
+          Label(message, systemImage: "exclamationmark.triangle.fill")
+            .font(.footnote)
+            .foregroundStyle(Palette.blocked)
+        }
+      }
+      .padding()
+      .background(Palette.canvas)
+      .navigationTitle("Review dictation")
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Cancel") { model.discardVoiceDraft() }
+        }
+        ToolbarItem(placement: .confirmationAction) {
+          Button("Send") {
+            isSending = true
+            sendError = nil
+            Task {
+              let sent = await model.sendVoiceDraft(draft, text: text)
+              isSending = false
+              if sent {
+                model.discardVoiceDraft()
+              } else {
+                sendError = model.errorMessage ?? "The prompt could not be sent. Try again."
+              }
+            }
+          }
+          .disabled(!canSend)
+        }
+      }
+      .task {
+        selection = TextSelection(insertionPoint: text.endIndex)
+        editorFocused = true
+      }
+    }
+  }
+
+  private var validation: VoiceTextValidation {
+    validateVoiceDraftText(text)
+  }
+
+  private var targetAvailable: Bool {
+    draft.matches(
+      agentID: model.selectedAgentID,
+      session: model.selectedSessionName,
+      available: model.canSend
+    )
+  }
+
+  private var canSend: Bool {
+    validation.isValid && targetAvailable && !isSending
+  }
+
+  private var validationMessage: String? {
+    if let sendError { return sendError }
+    switch validation.issue {
+    case .blank:
+      return "Enter text before sending."
+    case .controlCharacters:
+      return "Remove tabs or other control characters before sending."
+    case .tooLarge:
+      return "(validation.byteCount) of 8,192 UTF-8 bytes. Shorten the prompt to send it."
+    case nil:
+      if !targetAvailable {
+        return "Reconnect and reselect (draft.agentName) in (draft.session) to send this draft."
+      }
+      return nil
+    }
   }
 }
 

@@ -12,7 +12,7 @@ A task is `Done` only when its acceptance evidence is recorded here. A phase is 
 | 0. Herdr API validation | Done | Disposable prompt controlled through the bridge |
 | 1. Rust connector vertical slice | Done | Local and Tailscale acceptance checks passed |
 | 2. SwiftUI dashboard and keypad | In progress | SwiftUI dashboard and keypad simulator-verified; physical iPhone acceptance pending |
-| 3. Typed and voice interaction | In progress | Hold-to-talk Apple STT is automated-test verified; physical speech acceptance, typed editor, and review-before-send remain open |
+| 3. Typed and voice interaction | In progress | Send/Cancel/Edit voice flow and review editor are automated-test verified; full simulator visual and physical speech acceptance remain open |
 | 4. Pairing and lifecycle | Not started | Starts before wider beta |
 | 5. Hardening | Not started | Starts after daily-use validation |
 
@@ -79,10 +79,11 @@ Exit criterion: command approvals and question pickers can be completed from the
 
 ## Phase 3: Typed and voice interaction
 
-- [ ] Add text editing, send, send-without-Enter, cancel, and target-agent confirmation.
+- [x] Add voice-draft text editing, send, cancel, and exact target-agent/session confirmation.
+- [ ] Add a separate typed composer and send-without-Enter control.
 - [x] Add microphone permission and audio-session handling.
-- [x] Add hold-to-talk, partial transcription, release-to-send, and cancellation.
-- [ ] Add review-before-send and automatic-Enter options.
+- [x] Add hold-to-talk, partial transcription, release-to-send, visible drag-to-Cancel/Edit targets, and cancellation.
+- [x] Add review-before-send with automatic Enter.
 - [x] Preserve partial transcription when recognition fails.
 
 Exit criterion: typed and spoken instructions reach the selected agent without streaming audio off the phone.
@@ -125,11 +126,12 @@ Exit criterion: the app is reliable enough for repeated daily supervision.
 | 2026-07-15 | Use bundled monochrome agent marks with a terminal fallback | Agent keys remain identifiable without crowding the tactile button face |
 | 2026-07-15 | Use Apple on-device SpeechAnalyzer DictationTranscriber for voice MVP | Hold-release-send stays private, matches Phase 3 exit criterion, and reuses existing send_text |
 | 2026-07-15 | Target the iPhone app at iOS 26+ for SpeechAnalyzer; keep the Swift package at iOS 18 | Speech stays in the app target; the shared bridge client does not need the newer OS floor |
-| 2026-07-15 | Default voice UX to hold, speak, release, then send text plus Enter | Matches the PRD; review-before-send remains a later option |
+| 2026-07-15 | Default voice UX to hold, speak, release, then send text plus Enter | Keeps the fastest path as the default outcome |
 | 2026-07-16 | Prepare voice after saved bridge setup is available | Existing users prewarm on app launch; new users complete setup first, then incur permission and model preparation once |
 | 2026-07-16 | Use only the native asynchronous microphone permission API | Removes the legacy speech-authorizer actor-isolation crash; SpeechAnalyzer performs recognition on-device without a separate speech permission |
 | 2026-07-16 | Use a record-only measurement audio session without ducking other audio | Dictation owns only the microphone path it needs, does not lower other apps' audio, and deactivates capture on cleanup |
-| 2026-07-16 | Make VoiceOver dictation a start/send toggle with an explicit cancel action | Hold gestures are not reliable under VoiceOver, while the alternate actions preserve start, send, and cancel control |
+| 2026-07-16 | Add visible Cancel/Edit release targets and a target-bound review sheet | Normal release stays fast; alternate outcomes remain explicit and cannot redirect a captured draft to another agent |
+| 2026-07-16 | Make VoiceOver dictation a start/send toggle with named Edit and Cancel actions | Hold gestures are not reliable under VoiceOver, while alternate actions preserve all three release outcomes |
 | 2026-07-16 | Give Escape and Shift+Tab dedicated keypad buttons | Both controls are common across agent dialogs and mode switching |
 | 2026-07-16 | Implement Accept and Deny as watched-screen default-keymap shortcuts for five agent kinds | This is the smallest useful phone workflow; blocked-state revalidation narrows mistakes, while the docs preserve that it is not structured authorization |
 | 2026-07-16 | Replace protocol v1 with session-aware protocol v2 | Requiring the session on every request prevents colliding pane IDs from routing to the wrong Herdr server |
@@ -166,3 +168,6 @@ Exit criterion: the app is reliable enough for repeated daily supervision.
 | 2026-07-16 | Multi-session protocol v2 | Pass | Rust formatting, Clippy, and all 9 tests passed; two fake Herdr sockets with the same `w1:p1` agent ID routed independently and protocol v1 was rejected. |
 | 2026-07-16 | Swift and iOS session state | Pass | All 17 Swift package tests and all 5 iPhone 17 Pro Max simulator app tests passed; coverage includes tagged events, required session fields, remembered selection, fallback, and keypad gating. |
 | 2026-07-16 | Live named-session discovery | Pass | A disposable `remote-keypad-test` session appeared beside `default`, returned its own tagged empty agent snapshot, and was then stopped and deleted; live Swift-to-Rust ping/snapshot passed without agent input. |
+| 2026-07-16 | Voice Send/Cancel/Edit automation | Pass | Xcode 26.6 built the app and all 10 iPhone 17e simulator tests passed. New coverage checks displayed target centers and edges, release outside targets, moving into and out of targets, newline normalization, blank/control-character rejection, exact emoji byte limits, and original-target gating. |
+| 2026-07-16 | Talking and editor simulator review | Partial; manual states pending | The updated app launched on iPhone 17e, connected through the local bridge, displayed three live agents, and exposed named Voice, Edit dictation, and Cancel dictation accessibility behavior in code. Simulator microphone startup returned an audio-setup failure, so talking-overlay alignment, long transcript scrolling, Reduce Motion, keyboard layout, and failed-send retention still need interactive simulator review. |
+| 2026-07-16 | Voice gesture physical-iPhone acceptance | Pending | `devicectl` found no connected iPhone. Normal Send, Cancel sending nothing, Edit finalization, haptics, drag reach, blur/glow performance, connection loss, keyboard layout, and VoiceOver actions remain device acceptance work. |
