@@ -75,6 +75,11 @@ public enum RemoteKey: String, Codable, CaseIterable, Sendable {
   case space
 }
 
+public enum RemoteAction: String, Codable, CaseIterable, Sendable {
+  case accept
+  case deny
+}
+
 public enum ConnectionState: Equatable, Sendable {
   case stopped
   case connecting
@@ -128,6 +133,7 @@ enum WireRequestPayload: Sendable {
   case requestSnapshot
   case focusAgent(agentID: String)
   case sendKey(agentID: String, key: RemoteKey)
+  case sendAction(agentID: String, action: RemoteAction)
   case sendText(agentID: String, text: String, submit: Bool)
   case ping
 }
@@ -138,7 +144,7 @@ struct WireRequest: Encodable, Sendable {
   let payload: WireRequestPayload
 
   enum CodingKeys: String, CodingKey {
-    case version, id, type, token, key, text, submit
+    case version, id, type, token, key, action, text, submit
     case agentID = "agent_id"
   }
 
@@ -160,6 +166,10 @@ struct WireRequest: Encodable, Sendable {
       try container.encode("send_key", forKey: .type)
       try container.encode(agentID, forKey: .agentID)
       try container.encode(key, forKey: .key)
+    case .sendAction(let agentID, let action):
+      try container.encode("send_action", forKey: .type)
+      try container.encode(agentID, forKey: .agentID)
+      try container.encode(action, forKey: .action)
     case .sendText(let agentID, let text, let submit):
       try container.encode("send_text", forKey: .type)
       try container.encode(agentID, forKey: .agentID)

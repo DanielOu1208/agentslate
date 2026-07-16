@@ -62,6 +62,11 @@ final class AppModel {
       && selectedAgent != nil
   }
 
+  var canSendAction: Bool {
+    guard canSend, let selectedAgent else { return false }
+    return supportsRemoteActions(for: selectedAgent)
+  }
+
   var connectionLabel: String {
     switch (connectionState, herdrAvailability) {
     case (.connected, .connected): "Connected"
@@ -108,6 +113,17 @@ final class AppModel {
     guard canSend, let client, let selectedAgentID else { return }
     do {
       try await client.send(key: key, to: selectedAgentID)
+      errorMessage = nil
+      successFeedback += 1
+    } catch {
+      report(error)
+    }
+  }
+
+  func send(_ action: RemoteAction) async {
+    guard canSendAction, let client, let selectedAgentID else { return }
+    do {
+      try await client.send(action: action, to: selectedAgentID)
       errorMessage = nil
       successFeedback += 1
     } catch {
@@ -312,6 +328,14 @@ final class AppModel {
     partialTranscript = dictation.lastPartial
     if voiceState != failedState { errorFeedback += 1 }
     voiceState = failedState
+  }
+}
+
+func supportsRemoteActions(for agent: BridgeAgent) -> Bool {
+  guard agent.status == .blocked else { return false }
+  return switch agent.kind {
+  case "codex", "claude", "omp", "cursor", "opencode": true
+  default: false
   }
 }
 

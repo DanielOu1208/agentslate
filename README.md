@@ -15,9 +15,9 @@ This repository contains the working Rust bridge, command-line probe, reusable S
 - Configure the bridge manually on iPhone with Keychain-backed token storage.
 - Select and focus a live agent from a four-column icon grid with compact working-folder labels, then use a tactile D-pad, Enter, and Tab control bank.
 - Hold the Voice key to dictate on-device; release to send text plus Enter to the selected agent.
-- Preview active-looking Accept and Deny keys with local press feedback while their remote integrations remain deferred.
+- Use agent-aware Accept and Deny shortcuts for blocked Codex, Claude Code, OMP, Cursor, and OpenCode panes while watching the agent's screen.
 
-Terminal output is intentionally not sent to the phone. The keypad is designed for use while the agent's screen remains visible elsewhere.
+Terminal output is intentionally not sent to the phone. The keypad is designed for use while the agent's screen remains visible elsewhere. Accept and Deny send each supported agent's default terminal shortcut; they do not inspect or identify the permission request, so they are a watched-screen convenience rather than verified authorization.
 
 Voice prepares after an existing configuration loads, or after a new Bridge setup is saved and dismissed. The app requests microphone access only; speech recognition and its model stay on the iPhone. With VoiceOver, activate Voice once to start, activate it again to send, or use the Cancel dictation action.
 

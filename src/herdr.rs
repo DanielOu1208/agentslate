@@ -181,11 +181,12 @@ impl HerdrClient {
     }
 
     pub async fn send_key(&self, agent_id: &str, key: &str) -> Result<(), HerdrError> {
-        self.request(
-            "pane.send_keys",
-            json!({"pane_id": agent_id, "keys": [key]}),
-        )
-        .await?;
+        self.send_keys(agent_id, &[key]).await
+    }
+
+    pub async fn send_keys(&self, agent_id: &str, keys: &[&str]) -> Result<(), HerdrError> {
+        self.request("pane.send_keys", json!({"pane_id": agent_id, "keys": keys}))
+            .await?;
         Ok(())
     }
 

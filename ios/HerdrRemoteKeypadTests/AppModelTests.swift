@@ -20,6 +20,21 @@ func agentOrderingAndKeypadAvailability() {
   model.apply(.agents([blocked]))
   #expect(model.selectedAgentID == nil)
   #expect(!model.canSend)
+  #expect(!model.canSendAction)
+}
+
+@Test
+func approvalActionsRequireBlockedKnownAgents() {
+  for kind in ["codex", "claude", "omp", "cursor", "opencode"] {
+    let agent = BridgeAgent(id: kind, kind: kind, name: kind, status: .blocked)
+    #expect(supportsRemoteActions(for: agent))
+  }
+  #expect(
+    !supportsRemoteActions(
+      for: BridgeAgent(id: "working", kind: "codex", name: "Codex", status: .working)))
+  #expect(
+    !supportsRemoteActions(
+      for: BridgeAgent(id: "custom", kind: "custom", name: "Custom", status: .blocked)))
 }
 
 @Test
@@ -51,6 +66,7 @@ func sendAndVoiceAreGatedUntilAgentSelected() async {
     .agents([BridgeAgent(id: "a1", kind: "codex", name: "Codex", status: .blocked)])
   )
   #expect(!model.canSend)
+  #expect(!model.canSendAction)
   #expect(model.voiceState == .notPrepared)
 
   await model.send(text: "hello", submit: true)

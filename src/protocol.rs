@@ -37,6 +37,12 @@ pub enum ClientMessage {
         text: String,
         submit: bool,
     },
+    SendAction {
+        version: u32,
+        id: String,
+        agent_id: String,
+        action: RemoteAction,
+    },
     Ping {
         version: u32,
         id: String,
@@ -51,6 +57,7 @@ impl ClientMessage {
             | Self::FocusAgent { version, .. }
             | Self::SendKey { version, .. }
             | Self::SendText { version, .. }
+            | Self::SendAction { version, .. }
             | Self::Ping { version, .. } => *version,
         }
     }
@@ -62,6 +69,7 @@ impl ClientMessage {
             | Self::FocusAgent { id, .. }
             | Self::SendKey { id, .. }
             | Self::SendText { id, .. }
+            | Self::SendAction { id, .. }
             | Self::Ping { id, .. } => id,
         }
     }
@@ -75,6 +83,13 @@ impl ClientMessage {
         }
         Ok(())
     }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RemoteAction {
+    Accept,
+    Deny,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -99,6 +114,20 @@ pub fn herdr_key(key: &str) -> Option<&'static str> {
         "tab" => Some("tab"),
         "shift_tab" => Some("shift+tab"),
         "space" => Some("space"),
+        _ => None,
+    }
+}
+
+pub fn remote_action_keys(
+    agent_kind: &str,
+    action: RemoteAction,
+) -> Option<&'static [&'static str]> {
+    match (agent_kind, action) {
+        ("codex" | "cursor", RemoteAction::Accept) => Some(&["y"]),
+        ("codex" | "cursor", RemoteAction::Deny) => Some(&["n"]),
+        ("claude" | "omp" | "opencode", RemoteAction::Accept) => Some(&["enter"]),
+        ("claude" | "omp", RemoteAction::Deny) => Some(&["esc"]),
+        ("opencode", RemoteAction::Deny) => Some(&["esc", "enter"]),
         _ => None,
     }
 }
@@ -169,5 +198,25 @@ mod tests {
             validate_text(&"x".repeat(MAX_TEXT_BYTES + 1)),
             Err("invalid_text")
         );
+    }
+
+    #[test]
+    fn maps_remote_actions_for_supported_agents() {
+        let cases: &[(&str, RemoteAction, &[&str])] = &[
+            ("codex", RemoteAction::Accept, &["y"]),
+            ("codex", RemoteAction::Deny, &["n"]),
+            ("claude", RemoteAction::Accept, &["enter"]),
+            ("claude", RemoteAction::Deny, &["esc"]),
+            ("omp", RemoteAction::Accept, &["enter"]),
+            ("omp", RemoteAction::Deny, &["esc"]),
+            ("cursor", RemoteAction::Accept, &["y"]),
+            ("cursor", RemoteAction::Deny, &["n"]),
+            ("opencode", RemoteAction::Accept, &["enter"]),
+            ("opencode", RemoteAction::Deny, &["esc", "enter"]),
+        ];
+        for (kind, action, keys) in cases {
+            assert_eq!(remote_action_keys(kind, *action), Some(*keys));
+        }
+        assert_eq!(remote_action_keys("unknown", RemoteAction::Accept), None);
     }
 }

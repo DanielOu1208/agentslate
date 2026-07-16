@@ -68,7 +68,7 @@ Exit criterion: the authenticated probe lists current agents and safely operates
 - [x] Add a branded four-column, 12-slot agent grid with compact working-folder labels, confirmed Herdr pane focus, and clear selected-agent identity.
 - [x] Add a connected D-pad, Enter, Tab, haptics, and disconnected-state disabling.
 - [x] Add dedicated Escape and Shift+Tab keys.
-- [x] Add active-looking Accept, Deny, and blank-agent placeholders with local press feedback only.
+- [x] Add working Accept and Deny shortcuts for blocked Codex, Claude Code, OMP, Cursor, and OpenCode agents; keep blank-agent slots local-only.
 - [ ] Verify at least three simultaneous agents on a physical iPhone.
 
 Exit criterion: command approvals and question pickers can be completed from the physical iPhone while its target screen remains visible elsewhere.
@@ -117,7 +117,6 @@ Exit criterion: the app is reliable enough for repeated daily supervision.
 | 2026-07-15 | Target iOS 18+ in the shared Swift package | Matches the chosen compatibility floor and modern Swift concurrency |
 | 2026-07-15 | Use typed Swift wire messages and a five-second request timeout | Invalid message shapes become unrepresentable and stalled responses cannot hang the app indefinitely |
 | 2026-07-15 | Use a neutral-white modern hardware style for the iPhone keypad | Large sculpted square keys, circular recessed dishes, and a connected D-pad make the remote tactile without copying retro screws, dials, textures, or decoration |
-| 2026-07-15 | Keep Accept and Deny local-only until their integrations are structured | The placeholders can demonstrate the final interaction without blindly sending input to the wrong prompt |
 | 2026-07-15 | Keep bridge port 8765 fixed in the first iPhone setup screen | Manual host and token are sufficient for the current single-owner Tailscale workflow |
 | 2026-07-15 | Use bundled monochrome agent marks with a terminal fallback | Agent keys remain identifiable without crowding the tactile button face |
 | 2026-07-15 | Use Apple on-device SpeechAnalyzer DictationTranscriber for voice MVP | Hold-release-send stays private, matches Phase 3 exit criterion, and reuses existing send_text |
@@ -127,7 +126,8 @@ Exit criterion: the app is reliable enough for repeated daily supervision.
 | 2026-07-16 | Use only the native asynchronous microphone permission API | Removes the legacy speech-authorizer actor-isolation crash; SpeechAnalyzer performs recognition on-device without a separate speech permission |
 | 2026-07-16 | Use a record-only measurement audio session without ducking other audio | Dictation owns only the microphone path it needs, does not lower other apps' audio, and deactivates capture on cleanup |
 | 2026-07-16 | Make VoiceOver dictation a start/send toggle with an explicit cancel action | Hold gestures are not reliable under VoiceOver, while the alternate actions preserve start, send, and cancel control |
-| 2026-07-16 | Give Escape and Shift+Tab dedicated keypad buttons | Both controls are common across agent dialogs and mode switching; Accept and Deny remain local-only until structured approvals exist |
+| 2026-07-16 | Give Escape and Shift+Tab dedicated keypad buttons | Both controls are common across agent dialogs and mode switching |
+| 2026-07-16 | Implement Accept and Deny as watched-screen default-keymap shortcuts for five agent kinds | This is the smallest useful phone workflow; blocked-state revalidation narrows mistakes, while the docs preserve that it is not structured authorization |
 
 ## Verification evidence
 
@@ -155,3 +155,4 @@ Exit criterion: the app is reliable enough for repeated daily supervision.
 | 2026-07-16 | Speech reliability hardening | Automated pass; device pending | Generic iOS 26 simulator build and all 3 app-model tests pass; microphone permission, preparation, finalization, cancellation, failure display, and VoiceOver paths were reviewed. Xcode could not reconnect to the paired iPhone for the final microphone smoke test, so physical speech acceptance remains open |
 | 2026-07-16 | Audio tap concurrency crash fix | Automated pass; device retest pending | Physical-device debugging isolated `_dispatch_assert_queue_fail` on the real-time audio queue. The microphone tap is now explicitly sendable so it can run safely outside the main thread; the simulator build and all 3 app-model tests pass, while a repeat physical hold/release test remains open because the paired iPhone is unavailable |
 | 2026-07-16 | Escape and Shift+Tab keypad route | Automated pass | Rust formatting, Clippy, and all 7 tests passed, including `shift_tab` forwarding as Herdr `shift+tab`; all 16 Swift package tests and all 3 iPhone 17e simulator app tests passed under Xcode 26.6 with iOS 26.5 |
+| 2026-07-16 | Agent-aware Accept and Deny route | Automated pass; physical-agent checks pending | Rust tests cover all five mappings plus rejection for working and unsupported agents; 17 Swift package tests and all 4 iPhone 17e simulator app tests pass. Real prompt behavior remains for manual verification on the user's phone. |

@@ -34,10 +34,11 @@ struct ContentView: View {
             cell: cell,
             gap: gap,
             enabled: model.canSend,
+            actionEnabled: model.canSendAction,
             voiceState: model.voiceState,
             partialTranscript: model.partialTranscript,
             send: { key in Task { await model.send(key) } },
-            tapPlaceholder: tapPlaceholder,
+            sendAction: { action in Task { await model.send(action) } },
             beginVoice: { model.beginVoice() },
             endVoice: { Task { await model.endVoiceAndSend() } },
             cancelVoice: { Task { await model.cancelVoice() } },
@@ -280,10 +281,11 @@ private struct ControlBank: View {
   let cell: CGFloat
   let gap: CGFloat
   let enabled: Bool
+  let actionEnabled: Bool
   let voiceState: VoiceState
   let partialTranscript: String
   let send: (RemoteKey) -> Void
-  let tapPlaceholder: () -> Void
+  let sendAction: (RemoteAction) -> Void
   let beginVoice: () -> Void
   let endVoice: () -> Void
   let cancelVoice: () -> Void
@@ -304,14 +306,10 @@ private struct ControlBank: View {
           .frame(width: cell * 2 + gap, height: cell * 2 + gap)
 
         LazyVGrid(columns: columns, spacing: gap) {
-          PlaceholderKey(symbol: "xmark", accessibilityName: "Deny", action: tapPlaceholder)
+          RemoteActionButton(action: .deny, enabled: actionEnabled, send: sendAction)
             .frame(width: cell, height: cell)
-          PlaceholderKey(
-            symbol: "checkmark",
-            accessibilityName: "Accept",
-            action: tapPlaceholder
-          )
-          .frame(width: cell, height: cell)
+          RemoteActionButton(action: .accept, enabled: actionEnabled, send: sendAction)
+            .frame(width: cell, height: cell)
           RemoteKeyButton(key: .escape, enabled: enabled, send: send)
           RemoteKeyButton(key: .shiftTab, enabled: enabled, send: send)
           RemoteKeyButton(key: .enter, enabled: enabled, send: send)
@@ -677,21 +675,24 @@ private struct RemoteKeyButton: View {
   }
 }
 
-private struct PlaceholderKey: View {
-  let symbol: String
-  let accessibilityName: String
-  let action: () -> Void
+private struct RemoteActionButton: View {
+  let action: RemoteAction
+  let enabled: Bool
+  let send: (RemoteAction) -> Void
 
   var body: some View {
-    Button(action: action) {
-      Image(systemName: symbol)
+    Button { send(action) } label: {
+      Image(systemName: action == .accept ? "checkmark" : "xmark")
         .font(.system(size: 30, weight: .medium))
         .foregroundStyle(Palette.buttonIcon)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     .buttonStyle(TactileKeyStyle())
-    .accessibilityLabel(accessibilityName)
-    .accessibilityHint("Placeholder. No remote command is sent.")
+    .disabled(!enabled)
+    .opacity(enabled ? 1 : 0.5)
+    .animation(.easeOut(duration: 0.18), value: enabled)
+    .accessibilityLabel(action == .accept ? "Accept" : "Deny")
+    .accessibilityHint("Sends the selected agent's default shortcut.")
   }
 }
 

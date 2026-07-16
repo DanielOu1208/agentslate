@@ -13,6 +13,7 @@ private struct RecordedRequest: Equatable, Sendable {
   let type: String
   let agentID: String?
   let key: String?
+  let action: String?
   let text: String?
   let submit: Bool?
 }
@@ -127,7 +128,7 @@ private final class FakeBridge: @unchecked Sendable {
       } else if !ignorePing {
         handler.send([response(id: id, type: "pong")])
       }
-    case "focus_agent", "send_key", "send_text":
+    case "focus_agent", "send_key", "send_action", "send_text":
       if request["agent_id"] as? String == "missing" {
         handler.send([
           response(
@@ -143,6 +144,7 @@ private final class FakeBridge: @unchecked Sendable {
             type: type,
             agentID: request["agent_id"] as? String,
             key: request["key"] as? String,
+            action: request["action"] as? String,
             text: request["text"] as? String,
             submit: request["submit"] as? Bool
           ))
@@ -291,6 +293,7 @@ private func withTimeout<T: Sendable>(
     #expect(message == "agent is unavailable")
   }
   try await client.send(key: .arrowDown, to: "w1:p1")
+  try await client.send(action: .accept, to: "w1:p1")
   try await client.send(text: "continue", submit: true, to: "w1:p1")
   do {
     try await client.send(key: .enter, to: "missing")
@@ -303,11 +306,16 @@ private func withTimeout<T: Sendable>(
   #expect(
     bridge.requests == [
       RecordedRequest(
-        type: "focus_agent", agentID: "w1:p1", key: nil, text: nil, submit: nil),
+        type: "focus_agent", agentID: "w1:p1", key: nil, action: nil, text: nil, submit: nil),
       RecordedRequest(
-        type: "send_key", agentID: "w1:p1", key: "arrow_down", text: nil, submit: nil),
+        type: "send_key", agentID: "w1:p1", key: "arrow_down", action: nil, text: nil,
+        submit: nil),
       RecordedRequest(
-        type: "send_text", agentID: "w1:p1", key: nil, text: "continue", submit: true),
+        type: "send_action", agentID: "w1:p1", key: nil, action: "accept", text: nil,
+        submit: nil),
+      RecordedRequest(
+        type: "send_text", agentID: "w1:p1", key: nil, action: nil, text: "continue",
+        submit: true),
     ])
   #expect(bridge.snapshotRequestCount == 0)
   await client.stop()

@@ -1,7 +1,7 @@
 use crate::herdr::{HerdrClient, HerdrError, Snapshot};
 use crate::protocol::{
     Agent, ClientMessage, MAX_CLIENT_LINE_BYTES, MAX_REQUEST_ID_BYTES, PROTOCOL_VERSION, herdr_key,
-    read_frame, validate_text,
+    read_frame, remote_action_keys, validate_text,
 };
 use crate::token;
 use serde_json::{Value, json};
@@ -247,6 +247,44 @@ async fn handle_connection(
                     Err(error) => send_herdr_error(&outgoing, &id, error).await?,
                 }
             }
+            ClientMessage::SendAction {
+                id,
+                agent_id,
+                action,
+                ..
+            } => match current_agent(&herdr, &agent_id).await {
+                Ok(snapshot) => {
+                    let agent = snapshot
+                        .agents
+                        .iter()
+                        .find(|agent| agent.pane_id == agent_id)
+                        .expect("current_agent returned a snapshot without the requested agent");
+                    let keys = if agent.agent_status == "blocked" {
+                        remote_action_keys(&agent.agent, action)
+                    } else {
+                        None
+                    };
+                    let Some(keys) = keys else {
+                        send(
+                            &outgoing,
+                            error_response(
+                                &id,
+                                "action_unavailable",
+                                "action is unavailable for the agent's current state or type",
+                            ),
+                        )
+                        .await?;
+                        continue;
+                    };
+                    match herdr.send_keys(&agent_id, keys).await {
+                        Ok(()) => {
+                            send(&outgoing, response(&id, "input_acknowledged", json!({}))).await?
+                        }
+                        Err(error) => send_herdr_error(&outgoing, &id, error).await?,
+                    }
+                }
+                Err(error) => send_herdr_error(&outgoing, &id, error).await?,
+            },
             ClientMessage::Ping { id, .. } => {
                 send(&outgoing, response(&id, "pong", json!({}))).await?;
             }
@@ -483,12 +521,32 @@ mod tests {
                         "snapshot": {
                             "protocol": 16,
                             "version": "0.7.4",
-                            "agents": [{
-                                "pane_id": "w1:p1",
-                                "agent": "codex",
-                                "agent_status": "blocked",
-                                "workspace_id": "w1"
-                            }],
+                            "agents": [
+                                {
+                                    "pane_id": "w1:p1",
+                                    "agent": "codex",
+                                    "agent_status": "blocked",
+                                    "workspace_id": "w1"
+                                },
+                                {
+                                    "pane_id": "w1:p2",
+                                    "agent": "codex",
+                                    "agent_status": "working",
+                                    "workspace_id": "w1"
+                                },
+                                {
+                                    "pane_id": "w1:p3",
+                                    "agent": "custom",
+                                    "agent_status": "blocked",
+                                    "workspace_id": "w1"
+                                },
+                                {
+                                    "pane_id": "w1:p4",
+                                    "agent": "opencode",
+                                    "agent_status": "blocked",
+                                    "workspace_id": "w1"
+                                }
+                            ],
                             "workspaces": [{"workspace_id": "w1", "label": "demo"}]
                         }
                     }
@@ -681,6 +739,56 @@ mod tests {
             &mut write_half,
             json!({
                 "version": 1,
+                "id": "accept",
+                "type": "send_action",
+                "agent_id": "w1:p1",
+                "action": "accept"
+            }),
+        )
+        .await;
+        assert_eq!(
+            read_for_id(&mut reader, "accept").await["type"],
+            "input_acknowledged"
+        );
+
+        write_client(
+            &mut write_half,
+            json!({
+                "version": 1,
+                "id": "opencode-deny",
+                "type": "send_action",
+                "agent_id": "w1:p4",
+                "action": "deny"
+            }),
+        )
+        .await;
+        assert_eq!(
+            read_for_id(&mut reader, "opencode-deny").await["type"],
+            "input_acknowledged"
+        );
+
+        for (id, agent_id) in [("working-action", "w1:p2"), ("unsupported-action", "w1:p3")] {
+            write_client(
+                &mut write_half,
+                json!({
+                    "version": 1,
+                    "id": id,
+                    "type": "send_action",
+                    "agent_id": agent_id,
+                    "action": "accept"
+                }),
+            )
+            .await;
+            assert_eq!(
+                read_for_id(&mut reader, id).await["code"],
+                "action_unavailable"
+            );
+        }
+
+        write_client(
+            &mut write_half,
+            json!({
+                "version": 1,
                 "id": "text",
                 "type": "send_text",
                 "agent_id": "w1:p1",
@@ -708,6 +816,21 @@ mod tests {
         assert!(requests.iter().any(|request| {
             request["method"] == "pane.send_keys"
                 && request["params"] == json!({"pane_id": "w1:p1", "keys": ["shift+tab"]})
+        }));
+        assert!(requests.iter().any(|request| {
+            request["method"] == "pane.send_keys"
+                && request["params"] == json!({"pane_id": "w1:p1", "keys": ["y"]})
+        }));
+        assert!(requests.iter().any(|request| {
+            request["method"] == "pane.send_keys"
+                && request["params"] == json!({"pane_id": "w1:p4", "keys": ["esc", "enter"]})
+        }));
+        assert!(!requests.iter().any(|request| {
+            request["method"] == "pane.send_keys"
+                && matches!(
+                    request["params"]["pane_id"].as_str(),
+                    Some("w1:p2" | "w1:p3")
+                )
         }));
         assert!(requests.iter().any(|request| {
             request["method"] == "pane.send_input"

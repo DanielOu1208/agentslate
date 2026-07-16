@@ -52,10 +52,18 @@ Send an allowlisted key to a current agent:
 
 Allowed bridge key names are `arrow_up`, `arrow_down`, `arrow_left`, `arrow_right`, `enter`, `escape`, `tab`, `shift_tab`, and `space`.
 
+Send an agent-aware Accept or Deny shortcut:
+
+```json
+{"version":1,"id":"5","type":"send_action","agent_id":"w1:p1","action":"accept"}
+```
+
+The action is available only when a fresh Herdr snapshot still reports the target as blocked and its `kind` is supported. The bridge maps Codex and Cursor to `y`/`n`, Claude Code and OMP to `enter`/`escape`, and OpenCode to `enter`/`escape` followed by `enter`. OpenCode Deny is forwarded as one `pane.send_keys` request containing both keys.
+
 Send printable Unicode text, optionally followed atomically by Enter:
 
 ```json
-{"version":1,"id":"5","type":"send_text","agent_id":"w1:p1","text":"Continue with the smallest fix.","submit":true}
+{"version":1,"id":"6","type":"send_text","agent_id":"w1:p1","text":"Continue with the smallest fix.","submit":true}
 ```
 
 Text is limited to 8,192 UTF-8 bytes and may not contain Unicode control characters. This prevents embedded newlines or escape bytes from bypassing the key allowlist.
@@ -63,7 +71,7 @@ Text is limited to 8,192 UTF-8 bytes and may not contain Unicode control charact
 Connection check:
 
 ```json
-{"version":1,"id":"5","type":"ping"}
+{"version":1,"id":"7","type":"ping"}
 ```
 
 ## Server messages
@@ -140,6 +148,7 @@ Stable error codes:
 - `invalid_message`
 - `invalid_key`
 - `invalid_text`
+- `action_unavailable`
 - `agent_not_found`
 - `herdr_unavailable`
 - `internal_error`

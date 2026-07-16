@@ -108,6 +108,13 @@ public actor BridgeClient {
     }
   }
 
+  public func send(action: RemoteAction, to agentID: String) async throws {
+    let message = try await request(.sendAction(agentID: agentID, action: action))
+    guard case .inputAcknowledged = message else {
+      throw BridgeError.protocolViolation("action response is invalid")
+    }
+  }
+
   public func send(text: String, submit: Bool, to agentID: String) async throws {
     guard text.utf8.count <= 8_192,
       !text.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
@@ -269,7 +276,7 @@ public actor BridgeClient {
         throw BridgeError.notConnected
       }
       connection = activeConnection
-    case .requestSnapshot, .focusAgent, .sendKey, .sendText, .ping:
+    case .requestSnapshot, .focusAgent, .sendKey, .sendAction, .sendText, .ping:
       guard case .connected(let activeConnection) = lifecycle else {
         throw BridgeError.notConnected
       }

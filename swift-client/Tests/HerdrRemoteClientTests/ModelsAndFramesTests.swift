@@ -32,6 +32,18 @@ import Testing
   #expect(object["text"] == nil)
 }
 
+@Test func typedActionRequestEncodesOnlyItsRequiredFields() throws {
+  let data = try JSONEncoder().encode(
+    WireRequest(id: "2", payload: .sendAction(agentID: "w1:p1", action: .deny)))
+  let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+  #expect(object["version"] as? Int == 1)
+  #expect(object["type"] as? String == "send_action")
+  #expect(object["agent_id"] as? String == "w1:p1")
+  #expect(object["action"] as? String == "deny")
+  #expect(object["key"] == nil)
+  #expect(object["text"] == nil)
+}
+
 @Test func typedWireMessageRejectsIncompleteSnapshots() {
   let data = Data(#"{"version":1,"type":"agent_snapshot","event_id":1}"#.utf8)
   #expect(throws: (any Error).self) {

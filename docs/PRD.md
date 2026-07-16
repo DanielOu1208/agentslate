@@ -53,7 +53,7 @@ The first phone build adds:
 
 - a four-column SwiftUI agent-key grid with clear selected-agent identity;
 - a connected D-pad, Enter, Tab, Escape, Shift+Tab, and haptics;
-- active-looking Accept and Deny placeholders that provide local press feedback without sending remote input;
+- watched-screen Accept and Deny shortcuts for blocked Codex, Claude Code, OMP, Cursor, and OpenCode agents;
 - hold-to-talk Voice that converts speech on-device and sends text plus Enter to the selected agent;
 - connection state, automatic reconnect, and disabled controls when unavailable;
 - manual bridge address and token entry with Keychain storage.
@@ -78,6 +78,8 @@ The complete MVP additionally includes typed instructions and hold-to-talk local
 - Continue supporting Space in protocol v1 even though the phone layout does not expose a dedicated key for it.
 - Support printable Unicode text with and without a final Enter.
 - Include the selected agent ID in every input request.
+- Enable Accept and Deny only for a selected blocked agent whose kind has a fixed mapping, and revalidate both conditions against a fresh snapshot before forwarding it.
+- Map Codex and Cursor to `y`/`n`, Claude Code and OMP to Enter/Escape, and OpenCode to Enter/Escape-then-Enter.
 - Acknowledge input only after Herdr accepts it.
 - Reject control characters, unknown keys, oversized input, and panes that are not current Herdr agents.
 - Disable controls while the bridge is disconnected or Herdr is unavailable.
@@ -108,7 +110,7 @@ The complete MVP additionally includes typed instructions and hold-to-talk local
 - QR pairing, per-device revocation, APNs, TestFlight, and Apple Watch
 - multiple Herdr machines or public-internet exposure
 - Herdr plugin packaging or launchd service management
-- direct Codex or Claude Code approval integration before the bridge exposes structured request type and choice data
+- structured, request-identified agent approval integrations
 - arbitrary control-key chords such as Control+C
 
 ## Dependencies and risks
@@ -128,5 +130,5 @@ The complete MVP additionally includes typed instructions and hold-to-talk local
 - Protocol v1 was revised in place because no released client depended on its earlier terminal-streaming draft.
 - The shared Swift package targets iOS 18 and newer.
 - The iPhone app targets iOS 26 and newer so it can use SpeechAnalyzer for on-device dictation.
-- Dedicated Accept and Deny keys remain local-only placeholders until their integrations have enough structured data to send safe remote input.
+- Dedicated Accept and Deny keys are watched-screen default-keymap conveniences for five supported agent kinds; they are not structured authorization and remain disabled unless the selected agent is blocked.
 - The Voice key uses on-device hold-to-talk dictation and sends finalized text through the bridge.
