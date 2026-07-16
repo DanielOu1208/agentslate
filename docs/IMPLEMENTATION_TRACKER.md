@@ -33,6 +33,7 @@ Exit criterion: a disposable agent prompt is controlled without sending keys thr
 - [x] Create the local Git repository in the development workspace.
 - [x] Separate connector, iPhone vertical slice, and complete MVP acceptance criteria.
 - [x] Revise protocol v1 to the keypad-only contract before a client release.
+- [x] Replace protocol v1 with the session-aware protocol v2 contract.
 - [x] Run a final document consistency review after implementation.
 
 ### Bridge
@@ -41,6 +42,8 @@ Exit criterion: a disposable agent prompt is controlled without sending keys thr
 - [x] Bind to the discovered Tailscale IPv4 address by default and fail closed when unavailable.
 - [x] Authenticate before sending any Herdr state.
 - [x] Bootstrap and normalize agents from `session.snapshot`.
+- [x] Discover running named sessions and publish their ordered names without exposing socket paths.
+- [x] Require and validate a session name before every targeted request.
 - [x] Refresh the full snapshot within 200 ms when normalized agent state changes.
 - [x] Forward the nine allowlisted keys.
 - [x] Forward printable text with optional atomic Enter.
@@ -50,7 +53,7 @@ Exit criterion: a disposable agent prompt is controlled without sending keys thr
 
 ### Probe and verification
 
-- [x] Implement `list`, `key`, `text`, and `ping` probe commands.
+- [x] Implement `sessions`, session-aware `list`, `key`, `text`, and `ping` probe commands.
 - [x] Add unit tests for credentials, protocol validation, and input bounds.
 - [x] Add a full-route fake-Herdr integration test over Unix and TCP sockets.
 - [x] Pass `cargo fmt --check`, Clippy with warnings denied, and `cargo test`.
@@ -62,10 +65,11 @@ Exit criterion: the authenticated probe lists current agents and safely operates
 ## Phase 2: SwiftUI dashboard and keypad
 
 - [x] Create the native SwiftUI project on the Xcode-equipped MacBook.
-- [x] Implement protocol v1 models and `Network.framework` connection as an iOS 18+ Swift package.
+- [x] Implement protocol v2 models and `Network.framework` connection as an iOS 18+ Swift package.
 - [x] Add manual host/token configuration and Keychain storage.
 - [x] Add connection state and bounded automatic reconnect to the Swift package.
 - [x] Add a branded four-column, 12-slot agent grid with compact working-folder labels, confirmed Herdr pane focus, and clear selected-agent identity.
+- [x] Add a native header menu that remembers and safely falls back between running Herdr sessions.
 - [x] Add a connected D-pad, Enter, Tab, haptics, and disconnected-state disabling.
 - [x] Add dedicated Escape and Shift+Tab keys.
 - [x] Add working Accept and Deny shortcuts for blocked Codex, Claude Code, OMP, Cursor, and OpenCode agents; keep blank-agent slots local-only.
@@ -128,6 +132,9 @@ Exit criterion: the app is reliable enough for repeated daily supervision.
 | 2026-07-16 | Make VoiceOver dictation a start/send toggle with an explicit cancel action | Hold gestures are not reliable under VoiceOver, while the alternate actions preserve start, send, and cancel control |
 | 2026-07-16 | Give Escape and Shift+Tab dedicated keypad buttons | Both controls are common across agent dialogs and mode switching |
 | 2026-07-16 | Implement Accept and Deny as watched-screen default-keymap shortcuts for five agent kinds | This is the smallest useful phone workflow; blocked-state revalidation narrows mistakes, while the docs preserve that it is not structured authorization |
+| 2026-07-16 | Replace protocol v1 with session-aware protocol v2 | Requiring the session on every request prevents colliding pane IDs from routing to the wrong Herdr server |
+| 2026-07-16 | Keep session selection phone-local | The header menu changes the remote target without attaching, switching, or foregrounding anything on the Mac |
+| 2026-07-16 | Discover sessions normally and reserve `--herdr-socket` for fixed mode | Herdr injects its current socket into pane environments, so implicitly honoring that variable would disable multi-session discovery |
 
 ## Verification evidence
 
@@ -156,3 +163,6 @@ Exit criterion: the app is reliable enough for repeated daily supervision.
 | 2026-07-16 | Audio tap concurrency crash fix | Automated pass; device retest pending | Physical-device debugging isolated `_dispatch_assert_queue_fail` on the real-time audio queue. The microphone tap is now explicitly sendable so it can run safely outside the main thread; the simulator build and all 3 app-model tests pass, while a repeat physical hold/release test remains open because the paired iPhone is unavailable |
 | 2026-07-16 | Escape and Shift+Tab keypad route | Automated pass | Rust formatting, Clippy, and all 7 tests passed, including `shift_tab` forwarding as Herdr `shift+tab`; all 16 Swift package tests and all 3 iPhone 17e simulator app tests passed under Xcode 26.6 with iOS 26.5 |
 | 2026-07-16 | Agent-aware Accept and Deny route | Automated pass; physical-agent checks pending | Rust tests cover all five mappings plus rejection for working and unsupported agents; 17 Swift package tests and all 4 iPhone 17e simulator app tests pass. Real prompt behavior remains for manual verification on the user's phone. |
+| 2026-07-16 | Multi-session protocol v2 | Pass | Rust formatting, Clippy, and all 9 tests passed; two fake Herdr sockets with the same `w1:p1` agent ID routed independently and protocol v1 was rejected. |
+| 2026-07-16 | Swift and iOS session state | Pass | All 17 Swift package tests and all 5 iPhone 17 Pro Max simulator app tests passed; coverage includes tagged events, required session fields, remembered selection, fallback, and keypad gating. |
+| 2026-07-16 | Live named-session discovery | Pass | A disposable `remote-keypad-test` session appeared beside `default`, returned its own tagged empty agent snapshot, and was then stopped and deleted; live Swift-to-Rust ping/snapshot passed without agent input. |

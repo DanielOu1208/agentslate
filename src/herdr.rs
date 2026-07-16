@@ -3,7 +3,8 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
@@ -13,6 +14,73 @@ static REQUEST_ID: AtomicU64 = AtomicU64::new(1);
 #[derive(Clone)]
 pub struct HerdrClient {
     socket_path: PathBuf,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HerdrSession {
+    pub name: String,
+    pub is_default: bool,
+    pub socket_path: PathBuf,
+}
+
+impl HerdrSession {
+    pub fn new(name: impl Into<String>, is_default: bool, socket_path: PathBuf) -> Self {
+        Self {
+            name: name.into(),
+            is_default,
+            socket_path,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct SessionList {
+    sessions: Vec<ListedSession>,
+}
+
+#[derive(Deserialize)]
+struct ListedSession {
+    name: String,
+    #[serde(rename = "default")]
+    is_default: bool,
+    running: bool,
+    socket_path: PathBuf,
+}
+
+pub fn discover_sessions() -> Result<Vec<HerdrSession>, String> {
+    let output = Command::new("herdr")
+        .args(["session", "list", "--json"])
+        .output()
+        .map_err(|error| format!("cannot run 'herdr session list --json': {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "Herdr session discovery failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    parse_sessions(&output.stdout)
+}
+
+fn parse_sessions(json: &[u8]) -> Result<Vec<HerdrSession>, String> {
+    let listed: SessionList = serde_json::from_slice(json)
+        .map_err(|error| format!("invalid Herdr session list: {error}"))?;
+    let mut sessions = listed
+        .sessions
+        .into_iter()
+        .filter(|session| session.running && !session.name.is_empty())
+        .map(|session| HerdrSession {
+            name: session.name,
+            is_default: session.is_default,
+            socket_path: session.socket_path,
+        })
+        .collect::<Vec<_>>();
+    sessions.sort_by(|left, right| {
+        right
+            .is_default
+            .cmp(&left.is_default)
+            .then_with(|| left.name.cmp(&right.name))
+    });
+    Ok(sessions)
 }
 
 #[derive(Debug)]
@@ -102,10 +170,6 @@ impl Snapshot {
 impl HerdrClient {
     pub fn new(socket_path: PathBuf) -> Self {
         Self { socket_path }
-    }
-
-    pub fn socket_path(&self) -> &Path {
-        &self.socket_path
     }
 
     async fn connect(&self) -> Result<UnixStream, HerdrError> {
@@ -211,6 +275,27 @@ mod tests {
     use super::*;
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     use tokio::net::UnixListener;
+
+    #[test]
+    fn parses_running_sessions_default_first() {
+        let sessions = parse_sessions(
+            br#"{"sessions":[
+                {"name":"zeta","default":false,"running":true,"socket_path":"/tmp/zeta.sock"},
+                {"name":"default","default":true,"running":true,"socket_path":"/tmp/default.sock"},
+                {"name":"stopped","default":false,"running":false,"socket_path":"/tmp/stopped.sock"},
+                {"name":"alpha","default":false,"running":true,"socket_path":"/tmp/alpha.sock"}
+            ]}"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            sessions
+                .iter()
+                .map(|session| session.name.as_str())
+                .collect::<Vec<_>>(),
+            ["default", "alpha", "zeta"]
+        );
+    }
 
     #[tokio::test]
     async fn requests_and_normalizes_a_fake_snapshot() {

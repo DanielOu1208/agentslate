@@ -28,6 +28,7 @@ The product succeeds when the user can select the correct visible agent and comp
 The desktop half of the system must:
 
 - authenticate a client over the private Tailscale network;
+- discover running named Herdr sessions on the bridge Mac;
 - list live Herdr agents and semantic states;
 - focus a current agent's Herdr pane;
 - send arrows, Enter, Escape, Tab, Shift+Tab, Space, and printable text to a current agent;
@@ -40,9 +41,9 @@ The supplied Rust command-line probe verifies this slice.
 
 The reusable Swift package must:
 
-- model protocol v1 without depending on SwiftUI;
+- model protocol v2 without depending on SwiftUI;
 - authenticate and exchange newline-delimited JSON using `Network.framework`;
-- publish connection, Herdr availability, and agent snapshot events;
+- publish connection, session-list, per-session availability, and agent snapshot events;
 - focus a current agent and wait for bridge acknowledgement;
 - send allowlisted keys and validated text;
 - reconnect after transport failure but stop after authentication failure.
@@ -52,6 +53,7 @@ The reusable Swift package must:
 The first phone build adds:
 
 - a four-column SwiftUI agent-key grid with clear selected-agent identity;
+- a native header menu for choosing among running Herdr sessions;
 - a connected D-pad, Enter, Tab, Escape, Shift+Tab, and haptics;
 - watched-screen Accept and Deny shortcuts for blocked Codex, Claude Code, OMP, Cursor, and OpenCode agents;
 - hold-to-talk Voice that converts speech on-device and sends text plus Enter to the selected agent;
@@ -66,6 +68,9 @@ The complete MVP additionally includes typed instructions and hold-to-talk local
 
 ### Agent dashboard
 
+- Show running Herdr sessions with the default first and other names alphabetically.
+- Restore the last selected session when it remains available; otherwise select the default or first running session.
+- Keep session switching phone-local, clear the selected agent, and never attach or foreground a Mac window.
 - Show every Herdr-reported agent with name, workspace, state, optional task title, and selected state.
 - Distinguish Thinking (`working` on the wire), blocked, done, idle, and unknown states.
 - Focus the tapped agent's existing Herdr pane and select it only after acknowledgement.
@@ -75,9 +80,9 @@ The complete MVP additionally includes typed instructions and hold-to-talk local
 ### Input
 
 - Keep arrows, Enter, Escape, Tab, and Shift+Tab on the primary phone control bank for every current agent.
-- Continue supporting Space in protocol v1 even though the phone layout does not expose a dedicated key for it.
+- Continue supporting Space in protocol v2 even though the phone layout does not expose a dedicated key for it.
 - Support printable Unicode text with and without a final Enter.
-- Include the selected agent ID in every input request.
+- Include the selected session name and agent ID in every input request.
 - Enable Accept and Deny only for a selected blocked agent whose kind has a fixed mapping, and revalidate both conditions against a fresh snapshot before forwarding it.
 - Map Codex and Cursor to `y`/`n`, Claude Code and OMP to Enter/Escape, and OpenCode to Enter/Escape-then-Enter.
 - Acknowledge input only after Herdr accepts it.
@@ -115,7 +120,7 @@ The complete MVP additionally includes typed instructions and hold-to-talk local
 
 ## Dependencies and risks
 
-- Herdr's local protocol is versioned independently from bridge protocol v1. The connector must tolerate unknown fields and surface incompatible required behavior clearly.
+- Herdr's local protocol is versioned independently from bridge protocol v2. The connector must tolerate unknown fields and surface incompatible required behavior clearly.
 - iOS cannot maintain a permanent socket while suspended; reliable closed-app notifications would require a later APNs design.
 - A wrong agent selection can send valid input to the wrong pane. The phone must show the selected agent clearly and the bridge must revalidate membership before every input.
 - The shared development token is acceptable for one owner on Tailscale but must be replaced before wider distribution.
@@ -128,6 +133,8 @@ The complete MVP additionally includes typed instructions and hold-to-talk local
 - Terminal streaming was removed before the first phone client because the user will watch the agent on another display.
 - The selected keypad target remains client state, while each agent tap focuses the matching Herdr pane before changing that selection.
 - Protocol v1 was revised in place because no released client depended on its earlier terminal-streaming draft.
+- Protocol v2 requires a session name on every targeted request; protocol v1 clients must update with the bridge.
+- Session selection stays on the phone and does not switch or foreground a Mac window.
 - The shared Swift package targets iOS 18 and newer.
 - The iPhone app targets iOS 26 and newer so it can use SpeechAnalyzer for on-device dictation.
 - Dedicated Accept and Deny keys are watched-screen default-keymap conveniences for five supported agent kinds; they are not structured authorization and remain disabled unless the selected agent is blocked.

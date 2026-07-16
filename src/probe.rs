@@ -6,12 +6,17 @@ use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 
 pub enum ProbeAction {
-    List,
+    Sessions,
+    List {
+        session: String,
+    },
     Key {
+        session: String,
         agent_id: String,
         key: String,
     },
     Text {
+        session: String,
         agent_id: String,
         text: String,
         submit: bool,
@@ -43,36 +48,61 @@ pub async fn run(address: String, token_file: PathBuf, action: ProbeAction) -> R
     }
 
     let (id, request) = match action {
-        ProbeAction::List => (
+        ProbeAction::Sessions => loop {
+            let value = read_value(&mut reader).await?;
+            if value["type"] == "session_snapshot" {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&value).map_err(|error| error.to_string())?
+                );
+                return Ok(());
+            }
+        },
+        ProbeAction::List { session } => (
             "list",
-            json!({"version": 1, "id": "list", "type": "request_snapshot"}),
+            json!({
+                "version": PROTOCOL_VERSION,
+                "id": "list",
+                "type": "request_snapshot",
+                "session": session
+            }),
         ),
-        ProbeAction::Key { agent_id, key } => (
+        ProbeAction::Key {
+            session,
+            agent_id,
+            key,
+        } => (
             "key",
             json!({
-                "version": 1,
+                "version": PROTOCOL_VERSION,
                 "id": "key",
                 "type": "send_key",
+                "session": session,
                 "agent_id": agent_id,
                 "key": key
             }),
         ),
         ProbeAction::Text {
+            session,
             agent_id,
             text,
             submit,
         } => (
             "text",
             json!({
-                "version": 1,
+                "version": PROTOCOL_VERSION,
                 "id": "text",
                 "type": "send_text",
+                "session": session,
                 "agent_id": agent_id,
                 "text": text,
                 "submit": submit
             }),
         ),
-        ProbeAction::Ping => ("ping", json!({"version": 1, "id": "ping", "type": "ping"})),
+        ProbeAction::Ping => (
+            "ping",
+            json!({"version": PROTOCOL_VERSION, "id": "ping", "type": "ping"}),
+        ),
     };
     write(&mut write_half, request).await?;
 

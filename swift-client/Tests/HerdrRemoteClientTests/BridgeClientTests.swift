@@ -11,6 +11,7 @@ private enum TestFailure: Error {
 
 private struct RecordedRequest: Equatable, Sendable {
   let type: String
+  let session: String?
   let agentID: String?
   let key: String?
   let action: String?
@@ -115,7 +116,15 @@ private final class FakeBridge: @unchecked Sendable {
       } else {
         handler.send([
           response(id: id, type: "authenticated"),
-          event(type: "herdr_state", extra: ["state": "connected"]),
+          event(
+            type: "session_snapshot",
+            extra: [
+              "sessions": [
+                ["name": "default", "default": true],
+                ["name": "team", "default": false],
+              ]
+            ]),
+          event(type: "herdr_state", extra: ["session": "default", "state": "connected"]),
           snapshot(eventID: 2),
         ])
       }
@@ -142,6 +151,7 @@ private final class FakeBridge: @unchecked Sendable {
         recorded.append(
           RecordedRequest(
             type: type,
+            session: request["session"] as? String,
             agentID: request["agent_id"] as? String,
             key: request["key"] as? String,
             action: request["action"] as? String,
@@ -165,17 +175,18 @@ private final class FakeBridge: @unchecked Sendable {
   }
 
   private func response(id: String, type: String, extra: [String: Any] = [:]) -> [String: Any] {
-    ["version": 1, "id": id, "type": type].merging(extra) { _, new in new }
+    ["version": 2, "id": id, "type": type].merging(extra) { _, new in new }
   }
 
   private func event(type: String, extra: [String: Any]) -> [String: Any] {
-    ["version": 1, "event_id": 1, "type": type].merging(extra) { _, new in new }
+    ["version": 2, "event_id": 1, "type": type].merging(extra) { _, new in new }
   }
 
   private func snapshot(id: String? = nil, eventID: Int? = nil) -> [String: Any] {
     var message: [String: Any] = [
-      "version": 1,
+      "version": 2,
       "type": "agent_snapshot",
+      "session": "default",
       "herdr_protocol": 16,
       "herdr_version": "0.7.4",
       "agents": [
@@ -274,7 +285,7 @@ private func withTimeout<T: Sendable>(
   )
   let agents = Task { () throws -> [BridgeAgent] in
     for await event in client.events {
-      if case .agents(let agents) = event, !agents.isEmpty {
+      if case .agents(session: "default", let agents) = event, !agents.isEmpty {
         return agents
       }
     }
@@ -284,19 +295,19 @@ private func withTimeout<T: Sendable>(
   await client.start()
   #expect(try await withTimeout { try await agents.value }.first?.status == .blocked)
   try await client.ping()
-  try await client.focus(agentID: "w1:p1")
+  try await client.focus(agentID: "w1:p1", session: "default")
   do {
-    try await client.focus(agentID: "missing")
+    try await client.focus(agentID: "missing", session: "default")
     Issue.record("remote focus error was not returned")
   } catch let BridgeError.remote(code, message) {
     #expect(code == "agent_not_found")
     #expect(message == "agent is unavailable")
   }
-  try await client.send(key: .arrowDown, to: "w1:p1")
-  try await client.send(action: .accept, to: "w1:p1")
-  try await client.send(text: "continue", submit: true, to: "w1:p1")
+  try await client.send(key: .arrowDown, to: "w1:p1", session: "default")
+  try await client.send(action: .accept, to: "w1:p1", session: "default")
+  try await client.send(text: "continue", submit: true, to: "w1:p1", session: "default")
   do {
-    try await client.send(key: .enter, to: "missing")
+    try await client.send(key: .enter, to: "missing", session: "default")
     Issue.record("remote error was not returned")
   } catch let BridgeError.remote(code, message) {
     #expect(code == "agent_not_found")
@@ -306,16 +317,17 @@ private func withTimeout<T: Sendable>(
   #expect(
     bridge.requests == [
       RecordedRequest(
-        type: "focus_agent", agentID: "w1:p1", key: nil, action: nil, text: nil, submit: nil),
+        type: "focus_agent", session: "default", agentID: "w1:p1", key: nil, action: nil,
+        text: nil, submit: nil),
       RecordedRequest(
-        type: "send_key", agentID: "w1:p1", key: "arrow_down", action: nil, text: nil,
-        submit: nil),
+        type: "send_key", session: "default", agentID: "w1:p1", key: "arrow_down",
+        action: nil, text: nil, submit: nil),
       RecordedRequest(
-        type: "send_action", agentID: "w1:p1", key: nil, action: "accept", text: nil,
-        submit: nil),
+        type: "send_action", session: "default", agentID: "w1:p1", key: nil,
+        action: "accept", text: nil, submit: nil),
       RecordedRequest(
-        type: "send_text", agentID: "w1:p1", key: nil, action: nil, text: "continue",
-        submit: true),
+        type: "send_text", session: "default", agentID: "w1:p1", key: nil, action: nil,
+        text: "continue", submit: true),
     ])
   #expect(bridge.snapshotRequestCount == 0)
   await client.stop()
@@ -418,7 +430,8 @@ private func withTimeout<T: Sendable>(
     token: String(repeating: "a", count: 64)
   )
   do {
-    try await client.send(text: "two\nlines", submit: true, to: "w1:p1")
+    try await client.send(
+      text: "two\nlines", submit: true, to: "w1:p1", session: "default")
     Issue.record("control character was accepted")
   } catch let error as BridgeError {
     #expect(error == .invalidText)
@@ -523,7 +536,7 @@ func liveRustBridgeSmokeTest() async throws {
   let client = try BridgeClient(host: host, port: port, token: token)
   let agents = Task { () throws -> [BridgeAgent] in
     for await event in client.events {
-      if case .agents(let agents) = event {
+      if case .agents(_, let agents) = event {
         return agents
       }
     }

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt};
 
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 pub const MAX_CLIENT_LINE_BYTES: usize = 65_536;
 pub const MAX_HERDR_LINE_BYTES: usize = 4 * 1024 * 1024;
 pub const MAX_REQUEST_ID_BYTES: usize = 128;
@@ -18,21 +18,25 @@ pub enum ClientMessage {
     RequestSnapshot {
         version: u32,
         id: String,
+        session: String,
     },
     FocusAgent {
         version: u32,
         id: String,
+        session: String,
         agent_id: String,
     },
     SendKey {
         version: u32,
         id: String,
+        session: String,
         agent_id: String,
         key: String,
     },
     SendText {
         version: u32,
         id: String,
+        session: String,
         agent_id: String,
         text: String,
         submit: bool,
@@ -40,6 +44,7 @@ pub enum ClientMessage {
     SendAction {
         version: u32,
         id: String,
+        session: String,
         agent_id: String,
         action: RemoteAction,
     },
@@ -101,6 +106,13 @@ pub struct Agent {
     pub title: Option<String>,
     pub workspace: Option<String>,
     pub cwd: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Session {
+    pub name: String,
+    #[serde(rename = "default")]
+    pub is_default: bool,
 }
 
 pub fn herdr_key(key: &str) -> Option<&'static str> {

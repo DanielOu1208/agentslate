@@ -22,10 +22,12 @@ import Testing
 
 @Test func typedWireRequestEncodesOnlyItsRequiredFields() throws {
   let data = try JSONEncoder().encode(
-    WireRequest(id: "1", payload: .sendKey(agentID: "w1:p1", key: .shiftTab)))
+    WireRequest(
+      id: "1", payload: .sendKey(session: "team", agentID: "w1:p1", key: .shiftTab)))
   let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
-  #expect(object["version"] as? Int == 1)
+  #expect(object["version"] as? Int == 2)
   #expect(object["type"] as? String == "send_key")
+  #expect(object["session"] as? String == "team")
   #expect(object["agent_id"] as? String == "w1:p1")
   #expect(object["key"] as? String == "shift_tab")
   #expect(object["token"] == nil)
@@ -34,18 +36,20 @@ import Testing
 
 @Test func typedActionRequestEncodesOnlyItsRequiredFields() throws {
   let data = try JSONEncoder().encode(
-    WireRequest(id: "2", payload: .sendAction(agentID: "w1:p1", action: .deny)))
+    WireRequest(
+      id: "2", payload: .sendAction(session: "default", agentID: "w1:p1", action: .deny)))
   let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
-  #expect(object["version"] as? Int == 1)
+  #expect(object["version"] as? Int == 2)
   #expect(object["type"] as? String == "send_action")
   #expect(object["agent_id"] as? String == "w1:p1")
+  #expect(object["session"] as? String == "default")
   #expect(object["action"] as? String == "deny")
   #expect(object["key"] == nil)
   #expect(object["text"] == nil)
 }
 
 @Test func typedWireMessageRejectsIncompleteSnapshots() {
-  let data = Data(#"{"version":1,"type":"agent_snapshot","event_id":1}"#.utf8)
+  let data = Data(#"{"version":2,"type":"agent_snapshot","event_id":1}"#.utf8)
   #expect(throws: (any Error).self) {
     try JSONDecoder().decode(WireMessage.self, from: data)
   }

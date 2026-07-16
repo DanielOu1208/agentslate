@@ -78,7 +78,7 @@ async fn serve(mut arguments: VecDeque<String>) -> Result<(), String> {
     }
     server::run(ServerConfig {
         listen,
-        herdr_socket: herdr_socket.unwrap_or(default_herdr_socket()?),
+        herdr_socket,
         token_file: token_file.unwrap_or(token::default_token_path()?),
     })
     .await
@@ -108,17 +108,28 @@ async fn probe(mut arguments: VecDeque<String>) -> Result<(), String> {
     }
 
     let action = match arguments.pop_front().as_deref() {
-        Some("list") => {
+        Some("sessions") => {
             reject_remaining(arguments)?;
-            ProbeAction::List
+            ProbeAction::Sessions
+        }
+        Some("list") => {
+            let session = arguments.pop_front().ok_or("list requires SESSION")?;
+            reject_remaining(arguments)?;
+            ProbeAction::List { session }
         }
         Some("key") => {
+            let session = arguments.pop_front().ok_or("key requires SESSION")?;
             let agent_id = arguments.pop_front().ok_or("key requires AGENT_ID")?;
             let key = arguments.pop_front().ok_or("key requires KEY")?;
             reject_remaining(arguments)?;
-            ProbeAction::Key { agent_id, key }
+            ProbeAction::Key {
+                session,
+                agent_id,
+                key,
+            }
         }
         Some("text") => {
+            let session = arguments.pop_front().ok_or("text requires SESSION")?;
             let agent_id = arguments.pop_front().ok_or("text requires AGENT_ID")?;
             let submit = arguments.front().is_some_and(|value| value == "--submit");
             if submit {
@@ -128,6 +139,7 @@ async fn probe(mut arguments: VecDeque<String>) -> Result<(), String> {
                 return Err("text requires TEXT".into());
             }
             ProbeAction::Text {
+                session,
                 agent_id,
                 text: arguments.into_iter().collect::<Vec<_>>().join(" "),
                 submit,
@@ -160,17 +172,6 @@ fn parse_path_option(
     }
 }
 
-fn default_herdr_socket() -> Result<PathBuf, String> {
-    if let Some(path) = std::env::var_os("HERDR_SOCKET_PATH") {
-        return Ok(PathBuf::from(path));
-    }
-    let home = std::env::var_os("HOME").ok_or("HOME is not set")?;
-    Ok(PathBuf::from(home)
-        .join(".config")
-        .join("herdr")
-        .join("herdr.sock"))
-}
-
 fn reject_remaining(arguments: VecDeque<String>) -> Result<(), String> {
     if arguments.is_empty() {
         Ok(())
@@ -191,8 +192,9 @@ fn usage() -> &'static str {
 Usage:\n\
   herdr-remote-keypad setup [--token-file PATH]\n\
   herdr-remote-keypad serve [--listen IP:PORT] [--herdr-socket PATH] [--token-file PATH]\n\
-  herdr-remote-keypad probe [--address HOST:PORT] [--token-file PATH] list\n\
-  herdr-remote-keypad probe [options] key AGENT_ID KEY\n\
-  herdr-remote-keypad probe [options] text AGENT_ID [--submit] TEXT\n\
+  herdr-remote-keypad probe [--address HOST:PORT] [--token-file PATH] sessions\n\
+  herdr-remote-keypad probe [options] list SESSION\n\
+  herdr-remote-keypad probe [options] key SESSION AGENT_ID KEY\n\
+  herdr-remote-keypad probe [options] text SESSION AGENT_ID [--submit] TEXT\n\
   herdr-remote-keypad probe [options] ping"
 }

@@ -1,10 +1,11 @@
-use crate::herdr::{HerdrClient, HerdrError, Snapshot};
+use crate::herdr::{HerdrClient, HerdrError, HerdrSession, Snapshot, discover_sessions};
 use crate::protocol::{
-    Agent, ClientMessage, MAX_CLIENT_LINE_BYTES, MAX_REQUEST_ID_BYTES, PROTOCOL_VERSION, herdr_key,
-    read_frame, remote_action_keys, validate_text,
+    Agent, ClientMessage, MAX_CLIENT_LINE_BYTES, MAX_REQUEST_ID_BYTES, PROTOCOL_VERSION, Session,
+    herdr_key, read_frame, remote_action_keys, validate_text,
 };
 use crate::token;
 use serde_json::{Value, json};
+use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::process::Command;
@@ -14,13 +15,28 @@ use std::time::Duration;
 use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::mpsc;
-use tokio::time::{sleep, timeout};
+use tokio::sync::{RwLock, mpsc};
+use tokio::time::{Instant, sleep, timeout};
 
 pub struct ServerConfig {
     pub listen: Option<SocketAddr>,
-    pub herdr_socket: PathBuf,
+    pub herdr_socket: Option<PathBuf>,
     pub token_file: PathBuf,
+}
+
+#[derive(Clone)]
+enum SessionSource {
+    Discover,
+    Fixed(Vec<HerdrSession>),
+}
+
+impl SessionSource {
+    fn sessions(&self) -> Result<Vec<HerdrSession>, String> {
+        match self {
+            Self::Discover => discover_sessions(),
+            Self::Fixed(sessions) => Ok(sessions.clone()),
+        }
+    }
 }
 
 pub fn discover_tailscale_address(port: u16) -> Result<SocketAddr, String> {
@@ -47,21 +63,32 @@ pub async fn run(config: ServerConfig) -> Result<(), String> {
         .map(Ok)
         .unwrap_or_else(|| discover_tailscale_address(8765))?;
     let expected_token = Arc::new(token::read(&config.token_file)?);
-    let herdr = Arc::new(HerdrClient::new(config.herdr_socket));
+    let source = Arc::new(match config.herdr_socket {
+        Some(socket) => SessionSource::Fixed(vec![HerdrSession::new("custom", true, socket)]),
+        None => {
+            discover_sessions()?;
+            SessionSource::Discover
+        }
+    });
     let listener = TcpListener::bind(listen)
         .await
         .map_err(|error| format!("cannot listen on {listen}: {error}"))?;
     println!("Herdr Remote Keypad listening on {listen}");
-    println!("Herdr socket: {}", herdr.socket_path().display());
+    match source.as_ref() {
+        SessionSource::Discover => println!("Herdr sessions: automatic discovery"),
+        SessionSource::Fixed(sessions) => {
+            println!("Herdr socket: {}", sessions[0].socket_path.display())
+        }
+    }
 
     loop {
         tokio::select! {
             accepted = listener.accept() => {
                 let (stream, peer) = accepted.map_err(|error| error.to_string())?;
-                let herdr = Arc::clone(&herdr);
+                let source = Arc::clone(&source);
                 let expected_token = Arc::clone(&expected_token);
                 tokio::spawn(async move {
-                    if let Err(error) = handle_connection(stream, herdr, expected_token).await {
+                    if let Err(error) = handle_connection(stream, source, expected_token).await {
                         eprintln!("connection {peer} closed: {error}");
                     }
                 });
@@ -77,7 +104,7 @@ pub async fn run(config: ServerConfig) -> Result<(), String> {
 
 async fn handle_connection(
     stream: TcpStream,
-    herdr: Arc<HerdrClient>,
+    source: Arc<SessionSource>,
     expected_token: Arc<String>,
 ) -> Result<(), String> {
     let (read_half, mut write_half) = stream.into_split();
@@ -138,11 +165,13 @@ async fn handle_connection(
     }
     write_direct(&mut write_half, response(&id, "authenticated", json!({}))).await?;
 
+    let sessions = Arc::new(RwLock::new(source.sessions()?));
     let (outgoing, receiver) = mpsc::channel::<Value>(64);
     let writer = tokio::spawn(writer_loop(write_half, receiver));
     let events = Arc::new(AtomicU64::new(1));
-    let status_monitor = tokio::spawn(monitor_agents(
-        Arc::clone(&herdr),
+    let status_monitor = tokio::spawn(monitor_sessions(
+        source,
+        Arc::clone(&sessions),
         outgoing.clone(),
         Arc::clone(&events),
     ));
@@ -180,13 +209,30 @@ async fn handle_connection(
                 )
                 .await?;
             }
-            ClientMessage::RequestSnapshot { id, .. } => match herdr.snapshot().await {
-                Ok(snapshot) => {
-                    send(&outgoing, snapshot_response(&id, &snapshot)).await?;
+            ClientMessage::RequestSnapshot { id, session, .. } => {
+                match session_client(&sessions, &session).await {
+                    Ok(herdr) => match herdr.snapshot().await {
+                        Ok(snapshot) => {
+                            send(&outgoing, snapshot_response(&id, &session, &snapshot)).await?;
+                        }
+                        Err(error) => send_herdr_error(&outgoing, &id, error).await?,
+                    },
+                    Err(error) => send_herdr_error(&outgoing, &id, error).await?,
                 }
-                Err(error) => send_herdr_error(&outgoing, &id, error).await?,
-            },
-            ClientMessage::FocusAgent { id, agent_id, .. } => {
+            }
+            ClientMessage::FocusAgent {
+                id,
+                session,
+                agent_id,
+                ..
+            } => {
+                let herdr = match session_client(&sessions, &session).await {
+                    Ok(herdr) => herdr,
+                    Err(error) => {
+                        send_herdr_error(&outgoing, &id, error).await?;
+                        continue;
+                    }
+                };
                 match current_agent(&herdr, &agent_id).await {
                     Ok(_) => match herdr.focus_pane(&agent_id).await {
                         Ok(()) => {
@@ -198,7 +244,11 @@ async fn handle_connection(
                 }
             }
             ClientMessage::SendKey {
-                id, agent_id, key, ..
+                id,
+                session,
+                agent_id,
+                key,
+                ..
             } => {
                 let Some(key) = herdr_key(&key) else {
                     send(
@@ -207,6 +257,13 @@ async fn handle_connection(
                     )
                     .await?;
                     continue;
+                };
+                let herdr = match session_client(&sessions, &session).await {
+                    Ok(herdr) => herdr,
+                    Err(error) => {
+                        send_herdr_error(&outgoing, &id, error).await?;
+                        continue;
+                    }
                 };
                 match current_agent(&herdr, &agent_id).await {
                     Ok(_) => match herdr.send_key(&agent_id, key).await {
@@ -220,6 +277,7 @@ async fn handle_connection(
             }
             ClientMessage::SendText {
                 id,
+                session,
                 agent_id,
                 text,
                 submit,
@@ -237,6 +295,13 @@ async fn handle_connection(
                     .await?;
                     continue;
                 }
+                let herdr = match session_client(&sessions, &session).await {
+                    Ok(herdr) => herdr,
+                    Err(error) => {
+                        send_herdr_error(&outgoing, &id, error).await?;
+                        continue;
+                    }
+                };
                 match current_agent(&herdr, &agent_id).await {
                     Ok(_) => match herdr.send_text(&agent_id, &text, submit).await {
                         Ok(()) => {
@@ -249,42 +314,55 @@ async fn handle_connection(
             }
             ClientMessage::SendAction {
                 id,
+                session,
                 agent_id,
                 action,
                 ..
-            } => match current_agent(&herdr, &agent_id).await {
-                Ok(snapshot) => {
-                    let agent = snapshot
-                        .agents
-                        .iter()
-                        .find(|agent| agent.pane_id == agent_id)
-                        .expect("current_agent returned a snapshot without the requested agent");
-                    let keys = if agent.agent_status == "blocked" {
-                        remote_action_keys(&agent.agent, action)
-                    } else {
-                        None
-                    };
-                    let Some(keys) = keys else {
-                        send(
-                            &outgoing,
-                            error_response(
-                                &id,
-                                "action_unavailable",
-                                "action is unavailable for the agent's current state or type",
-                            ),
-                        )
-                        .await?;
+            } => {
+                let herdr = match session_client(&sessions, &session).await {
+                    Ok(herdr) => herdr,
+                    Err(error) => {
+                        send_herdr_error(&outgoing, &id, error).await?;
                         continue;
-                    };
-                    match herdr.send_keys(&agent_id, keys).await {
-                        Ok(()) => {
-                            send(&outgoing, response(&id, "input_acknowledged", json!({}))).await?
-                        }
-                        Err(error) => send_herdr_error(&outgoing, &id, error).await?,
                     }
+                };
+                match current_agent(&herdr, &agent_id).await {
+                    Ok(snapshot) => {
+                        let agent = snapshot
+                            .agents
+                            .iter()
+                            .find(|agent| agent.pane_id == agent_id)
+                            .expect(
+                                "current_agent returned a snapshot without the requested agent",
+                            );
+                        let keys = if agent.agent_status == "blocked" {
+                            remote_action_keys(&agent.agent, action)
+                        } else {
+                            None
+                        };
+                        let Some(keys) = keys else {
+                            send(
+                                &outgoing,
+                                error_response(
+                                    &id,
+                                    "action_unavailable",
+                                    "action is unavailable for the agent's current state or type",
+                                ),
+                            )
+                            .await?;
+                            continue;
+                        };
+                        match herdr.send_keys(&agent_id, keys).await {
+                            Ok(()) => {
+                                send(&outgoing, response(&id, "input_acknowledged", json!({})))
+                                    .await?
+                            }
+                            Err(error) => send_herdr_error(&outgoing, &id, error).await?,
+                        }
+                    }
+                    Err(error) => send_herdr_error(&outgoing, &id, error).await?,
                 }
-                Err(error) => send_herdr_error(&outgoing, &id, error).await?,
-            },
+            }
             ClientMessage::Ping { id, .. } => {
                 send(&outgoing, response(&id, "pong", json!({}))).await?;
             }
@@ -309,74 +387,130 @@ async fn current_agent(herdr: &HerdrClient, agent_id: &str) -> Result<Snapshot, 
     }
 }
 
-async fn monitor_agents(
-    herdr: Arc<HerdrClient>,
+async fn session_client(
+    sessions: &RwLock<Vec<HerdrSession>>,
+    name: &str,
+) -> Result<HerdrClient, HerdrError> {
+    sessions
+        .read()
+        .await
+        .iter()
+        .find(|session| session.name == name)
+        .map(|session| HerdrClient::new(session.socket_path.clone()))
+        .ok_or_else(|| HerdrError::Api {
+            code: "session_not_found".into(),
+            message: "session is not currently running".into(),
+        })
+}
+
+async fn monitor_sessions(
+    source: Arc<SessionSource>,
+    sessions: Arc<RwLock<Vec<HerdrSession>>>,
     outgoing: mpsc::Sender<Value>,
     events: Arc<AtomicU64>,
 ) {
-    let mut connected = None;
-    let mut backoff = Duration::from_millis(250);
-    let mut previous_agents = None;
+    let mut previous_sessions = None;
+    let mut connected = HashMap::<String, bool>::new();
+    let mut previous_agents = HashMap::<String, Vec<Agent>>::new();
+    let mut next_discovery = Instant::now();
+
     loop {
-        match herdr.snapshot().await {
-            Ok(snapshot) => {
-                if connected != Some(true) {
-                    if send_event(
-                        &outgoing,
-                        &events,
-                        "herdr_state",
-                        json!({"state": "connected"}),
-                    )
-                    .await
-                    .is_err()
-                    {
-                        return;
-                    }
-                    connected = Some(true);
-                }
-                let agents = snapshot.normalized_agents();
-                if previous_agents.as_ref() != Some(&agents) {
-                    if send_event(
-                        &outgoing,
-                        &events,
-                        "agent_snapshot",
-                        snapshot_payload(&snapshot, &agents),
-                    )
-                    .await
-                    .is_err()
-                    {
-                        return;
-                    }
-                    previous_agents = Some(agents);
-                }
-                // ponytail: per-client polling is enough for the single-phone MVP; move to a
-                // shared event cache only when multiple simultaneous devices make it measurable.
-                backoff = Duration::from_millis(250);
-                sleep(Duration::from_millis(200)).await;
-                continue;
+        if Instant::now() >= next_discovery {
+            match source.sessions() {
+                Ok(discovered) => *sessions.write().await = discovered,
+                Err(error) => eprintln!("Herdr session discovery failed: {error}"),
             }
-            Err(error) => {
-                eprintln!("Herdr monitor unavailable: {error}");
-            }
+            next_discovery = Instant::now() + Duration::from_secs(1);
         }
 
-        if connected != Some(false) {
+        let current_sessions = sessions.read().await.clone();
+        let summaries = current_sessions
+            .iter()
+            .map(|session| Session {
+                name: session.name.clone(),
+                is_default: session.is_default,
+            })
+            .collect::<Vec<_>>();
+        if previous_sessions.as_ref() != Some(&summaries) {
             if send_event(
                 &outgoing,
                 &events,
-                "herdr_state",
-                json!({"state": "unavailable"}),
+                "session_snapshot",
+                json!({"sessions": summaries}),
             )
             .await
             .is_err()
             {
                 return;
             }
-            connected = Some(false);
-            previous_agents = None;
+            previous_sessions = Some(summaries);
         }
-        sleep(backoff).await;
-        backoff = (backoff * 2).min(Duration::from_secs(5));
+
+        let current_names = current_sessions
+            .iter()
+            .map(|session| session.name.as_str())
+            .collect::<Vec<_>>();
+        connected.retain(|name, _| current_names.contains(&name.as_str()));
+        previous_agents.retain(|name, _| current_names.contains(&name.as_str()));
+
+        for session in current_sessions {
+            let herdr = HerdrClient::new(session.socket_path);
+            match herdr.snapshot().await {
+                Ok(snapshot) => {
+                    if connected.get(&session.name) != Some(&true) {
+                        if send_event(
+                            &outgoing,
+                            &events,
+                            "herdr_state",
+                            json!({"session": session.name, "state": "connected"}),
+                        )
+                        .await
+                        .is_err()
+                        {
+                            return;
+                        }
+                        connected.insert(session.name.clone(), true);
+                    }
+                    let agents = snapshot.normalized_agents();
+                    if previous_agents.get(&session.name) != Some(&agents) {
+                        if send_event(
+                            &outgoing,
+                            &events,
+                            "agent_snapshot",
+                            snapshot_payload(&session.name, &snapshot, &agents),
+                        )
+                        .await
+                        .is_err()
+                        {
+                            return;
+                        }
+                        previous_agents.insert(session.name.clone(), agents);
+                    }
+                }
+                Err(error) => {
+                    eprintln!("Herdr session '{}' unavailable: {error}", session.name);
+                    if connected.get(&session.name) != Some(&false) {
+                        if send_event(
+                            &outgoing,
+                            &events,
+                            "herdr_state",
+                            json!({"session": session.name, "state": "unavailable"}),
+                        )
+                        .await
+                        .is_err()
+                        {
+                            return;
+                        }
+                        connected.insert(session.name.clone(), false);
+                        previous_agents.remove(&session.name);
+                    }
+                }
+            }
+        }
+
+        // ponytail: per-client polling is enough for the single-phone MVP; move to a shared
+        // cache only when multiple simultaneous devices make the duplicate work measurable.
+        sleep(Duration::from_millis(200)).await;
     }
 }
 
@@ -432,17 +566,22 @@ fn error_response(id: &str, code: &str, message: &str) -> Value {
     response(id, "error", json!({"code": code, "message": message}))
 }
 
-fn snapshot_payload(snapshot: &Snapshot, agents: &[Agent]) -> Value {
+fn snapshot_payload(session: &str, snapshot: &Snapshot, agents: &[Agent]) -> Value {
     json!({
+        "session": session,
         "herdr_protocol": snapshot.protocol,
         "herdr_version": snapshot.version,
         "agents": agents
     })
 }
 
-fn snapshot_response(id: &str, snapshot: &Snapshot) -> Value {
+fn snapshot_response(id: &str, session: &str, snapshot: &Snapshot) -> Value {
     let agents = snapshot.normalized_agents();
-    response(id, "agent_snapshot", snapshot_payload(snapshot, &agents))
+    response(
+        id,
+        "agent_snapshot",
+        snapshot_payload(session, snapshot, &agents),
+    )
 }
 
 async fn send_herdr_error(
@@ -451,7 +590,11 @@ async fn send_herdr_error(
     error: HerdrError,
 ) -> Result<(), String> {
     let (code, message) = match error {
-        HerdrError::Api { code, message } if code == "agent_not_found" => (code, message),
+        HerdrError::Api { code, message }
+            if code == "agent_not_found" || code == "session_not_found" =>
+        {
+            (code, message)
+        }
         HerdrError::Api { code, .. } if code == "pane_not_found" || code == "not_found" => (
             "agent_not_found".into(),
             "agent is no longer present in Herdr".into(),
@@ -495,6 +638,26 @@ mod tests {
                     .unwrap();
                 let value: Value = serde_json::from_str(&line).unwrap();
                 if value.get("id").and_then(Value::as_str) == Some(id) {
+                    return value;
+                }
+            }
+        })
+        .await
+        .unwrap()
+    }
+
+    async fn read_for_type(
+        reader: &mut BufReader<tokio::net::tcp::OwnedReadHalf>,
+        message_type: &str,
+    ) -> Value {
+        timeout(Duration::from_secs(2), async {
+            loop {
+                let line = read_frame(reader, MAX_CLIENT_LINE_BYTES)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                let value: Value = serde_json::from_str(&line).unwrap();
+                if value.get("type").and_then(Value::as_str) == Some(message_type) {
                     return value;
                 }
             }
@@ -573,7 +736,7 @@ mod tests {
     #[test]
     fn event_and_response_envelopes_do_not_overwrite_payloads() {
         let response = response("abc", "pong", json!({"detail": "ok"}));
-        assert_eq!(response["version"], 1);
+        assert_eq!(response["version"], PROTOCOL_VERSION);
         assert_eq!(response["id"], "abc");
         assert_eq!(response["detail"], "ok");
     }
@@ -586,23 +749,56 @@ mod tests {
             TEST_ID.fetch_add(1, Ordering::Relaxed)
         ));
         let herdr_listener = UnixListener::bind(&socket).unwrap();
-        let bridge_socket = socket.clone();
         let herdr_requests = Arc::new(Mutex::new(Vec::new()));
         let fake_herdr = tokio::spawn(run_fake_herdr(herdr_listener, Arc::clone(&herdr_requests)));
+
+        let second_socket = std::env::temp_dir().join(format!(
+            "herdr-remote-keypad-server-test-{}-{}.sock",
+            std::process::id(),
+            TEST_ID.fetch_add(1, Ordering::Relaxed)
+        ));
+        let second_listener = UnixListener::bind(&second_socket).unwrap();
+        let second_requests = Arc::new(Mutex::new(Vec::new()));
+        let second_herdr = tokio::spawn(run_fake_herdr(
+            second_listener,
+            Arc::clone(&second_requests),
+        ));
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let expected_token = Arc::new("a".repeat(64));
+        let source = Arc::new(SessionSource::Fixed(vec![
+            HerdrSession::new("default", true, socket.clone()),
+            HerdrSession::new("team", false, second_socket.clone()),
+        ]));
         let bridge = tokio::spawn(async move {
             loop {
                 let (stream, _) = listener.accept().await.unwrap();
-                let herdr = Arc::new(HerdrClient::new(bridge_socket.clone()));
+                let source = Arc::clone(&source);
                 let token = Arc::clone(&expected_token);
                 tokio::spawn(async move {
-                    let _ = handle_connection(stream, herdr, token).await;
+                    let _ = handle_connection(stream, source, token).await;
                 });
             }
         });
+
+        let old_stream = TcpStream::connect(address).await.unwrap();
+        let (old_read, mut old_write) = old_stream.into_split();
+        let mut old_reader = BufReader::new(old_read);
+        write_client(
+            &mut old_write,
+            json!({
+                "version": 1,
+                "id": "old-auth",
+                "type": "authenticate",
+                "token": "a".repeat(64)
+            }),
+        )
+        .await;
+        assert_eq!(
+            read_for_id(&mut old_reader, "old-auth").await["code"],
+            "unsupported_version"
+        );
 
         let bad_stream = TcpStream::connect(address).await.unwrap();
         let (bad_read, mut bad_write) = bad_stream.into_split();
@@ -610,7 +806,7 @@ mod tests {
         write_client(
             &mut bad_write,
             json!({
-                "version": 1,
+                "version": PROTOCOL_VERSION,
                 "id": "bad-auth",
                 "type": "authenticate",
                 "token": "b".repeat(64)
@@ -636,7 +832,7 @@ mod tests {
         write_client(
             &mut write_half,
             json!({
-                "version": 1,
+                "version": PROTOCOL_VERSION,
                 "id": "auth",
                 "type": "authenticate",
                 "token": "a".repeat(64)
@@ -647,10 +843,18 @@ mod tests {
             read_for_id(&mut reader, "auth").await["type"],
             "authenticated"
         );
+        let sessions = read_for_type(&mut reader, "session_snapshot").await;
+        assert_eq!(sessions["sessions"][0]["name"], "default");
+        assert_eq!(sessions["sessions"][1]["name"], "team");
 
         write_client(
             &mut write_half,
-            json!({"version": 1, "id": "snapshot", "type": "request_snapshot"}),
+            json!({
+                "version": PROTOCOL_VERSION,
+                "id": "snapshot",
+                "type": "request_snapshot",
+                "session": "default"
+            }),
         )
         .await;
         let snapshot = read_for_id(&mut reader, "snapshot").await;
@@ -660,9 +864,10 @@ mod tests {
         write_client(
             &mut write_half,
             json!({
-                "version": 1,
+                "version": PROTOCOL_VERSION,
                 "id": "focus",
                 "type": "focus_agent",
+                "session": "default",
                 "agent_id": "w1:p1"
             }),
         )
@@ -675,9 +880,10 @@ mod tests {
         write_client(
             &mut write_half,
             json!({
-                "version": 1,
+                "version": PROTOCOL_VERSION,
                 "id": "missing-focus",
                 "type": "focus_agent",
+                "session": "default",
                 "agent_id": "missing"
             }),
         )
@@ -690,9 +896,10 @@ mod tests {
         write_client(
             &mut write_half,
             json!({
-                "version": 1,
+                "version": PROTOCOL_VERSION,
                 "id": "invalid-key",
                 "type": "send_key",
+                "session": "default",
                 "agent_id": "w1:p1",
                 "key": "ctrl_c"
             }),
@@ -706,9 +913,10 @@ mod tests {
         write_client(
             &mut write_half,
             json!({
-                "version": 1,
+                "version": PROTOCOL_VERSION,
                 "id": "key",
                 "type": "send_key",
+                "session": "default",
                 "agent_id": "w1:p1",
                 "key": "arrow_down"
             }),
@@ -722,9 +930,44 @@ mod tests {
         write_client(
             &mut write_half,
             json!({
-                "version": 1,
+                "version": PROTOCOL_VERSION,
+                "id": "team-key",
+                "type": "send_key",
+                "session": "team",
+                "agent_id": "w1:p1",
+                "key": "arrow_up"
+            }),
+        )
+        .await;
+        assert_eq!(
+            read_for_id(&mut reader, "team-key").await["type"],
+            "input_acknowledged"
+        );
+
+        write_client(
+            &mut write_half,
+            json!({
+                "version": PROTOCOL_VERSION,
+                "id": "missing-session",
+                "type": "send_key",
+                "session": "missing",
+                "agent_id": "w1:p1",
+                "key": "enter"
+            }),
+        )
+        .await;
+        assert_eq!(
+            read_for_id(&mut reader, "missing-session").await["code"],
+            "session_not_found"
+        );
+
+        write_client(
+            &mut write_half,
+            json!({
+                "version": PROTOCOL_VERSION,
                 "id": "shift-tab",
                 "type": "send_key",
+                "session": "default",
                 "agent_id": "w1:p1",
                 "key": "shift_tab"
             }),
@@ -738,9 +981,10 @@ mod tests {
         write_client(
             &mut write_half,
             json!({
-                "version": 1,
+                "version": PROTOCOL_VERSION,
                 "id": "accept",
                 "type": "send_action",
+                "session": "default",
                 "agent_id": "w1:p1",
                 "action": "accept"
             }),
@@ -754,9 +998,10 @@ mod tests {
         write_client(
             &mut write_half,
             json!({
-                "version": 1,
+                "version": PROTOCOL_VERSION,
                 "id": "opencode-deny",
                 "type": "send_action",
+                "session": "default",
                 "agent_id": "w1:p4",
                 "action": "deny"
             }),
@@ -771,9 +1016,10 @@ mod tests {
             write_client(
                 &mut write_half,
                 json!({
-                    "version": 1,
+                    "version": PROTOCOL_VERSION,
                     "id": id,
                     "type": "send_action",
+                    "session": "default",
                     "agent_id": agent_id,
                     "action": "accept"
                 }),
@@ -788,9 +1034,10 @@ mod tests {
         write_client(
             &mut write_half,
             json!({
-                "version": 1,
+                "version": PROTOCOL_VERSION,
                 "id": "text",
                 "type": "send_text",
+                "session": "default",
                 "agent_id": "w1:p1",
                 "text": "continue",
                 "submit": true
@@ -846,12 +1093,22 @@ mod tests {
         )));
         drop(requests);
 
+        let requests = second_requests.lock().await;
+        assert!(requests.iter().any(|request| {
+            request["method"] == "pane.send_keys"
+                && request["params"] == json!({"pane_id": "w1:p1", "keys": ["up"]})
+        }));
+        drop(requests);
+
         drop(write_half);
         drop(reader);
         bridge.abort();
         fake_herdr.abort();
+        second_herdr.abort();
         let _ = bridge.await;
         let _ = fake_herdr.await;
+        let _ = second_herdr.await;
         std::fs::remove_file(socket).unwrap();
+        std::fs::remove_file(second_socket).unwrap();
     }
 }

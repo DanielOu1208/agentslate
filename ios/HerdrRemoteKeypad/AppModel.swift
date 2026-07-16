@@ -17,6 +17,8 @@ enum VoiceState: Equatable {
 final class AppModel {
   private(set) var connectionState: ConnectionState = .stopped
   private(set) var herdrAvailability: HerdrAvailability = .unavailable
+  private(set) var sessions: [BridgeSession] = []
+  private(set) var selectedSessionName: String?
   private(set) var agents: [BridgeAgent] = []
   private(set) var selectedAgentID: String?
   private(set) var errorMessage: String?
@@ -35,13 +37,17 @@ final class AppModel {
   @ObservationIgnored private var voiceEndInProgress = false
   @ObservationIgnored private var voiceCancelInProgress = false
   @ObservationIgnored private var voiceSessionGeneration = 0
+  @ObservationIgnored private var agentsBySession: [String: [BridgeAgent]] = [:]
+  @ObservationIgnored private var availabilityBySession: [String: HerdrAvailability] = [:]
 
   init(
     configuredHost: String = UserDefaults.standard.string(forKey: "bridgeHost") ?? "",
-    configuredToken: String = TokenStore.load()
+    configuredToken: String = TokenStore.load(),
+    selectedSessionName: String? = UserDefaults.standard.string(forKey: "selectedHerdrSession")
   ) {
     self.configuredHost = configuredHost
     self.configuredToken = configuredToken
+    self.selectedSessionName = selectedSessionName
   }
 
   var hasConfiguration: Bool {
@@ -68,7 +74,10 @@ final class AppModel {
   }
 
   var connectionLabel: String {
-    switch (connectionState, herdrAvailability) {
+    if connectionState == .connected, selectedSessionName == nil {
+      return "No Herdr sessions"
+    }
+    return switch (connectionState, herdrAvailability) {
     case (.connected, .connected): "Connected"
     case (.connected, .unavailable): "Herdr unavailable"
     case (.connecting, _): "Connecting"
@@ -95,13 +104,15 @@ final class AppModel {
   }
 
   func select(_ agent: BridgeAgent) async {
-    guard let client else {
+    guard let client, let session = selectedSessionName else {
       report(BridgeError.notConnected)
       return
     }
     do {
-      try await client.focus(agentID: agent.id)
-      guard agents.contains(where: { $0.id == agent.id }) else { return }
+      try await client.focus(agentID: agent.id, session: session)
+      guard selectedSessionName == session,
+        agents.contains(where: { $0.id == agent.id })
+      else { return }
       selectedAgentID = agent.id
       errorMessage = nil
     } catch {
@@ -109,10 +120,17 @@ final class AppModel {
     }
   }
 
+  func select(_ session: BridgeSession) {
+    guard sessions.contains(session) else { return }
+    activateSession(session.name)
+  }
+
   func send(_ key: RemoteKey) async {
-    guard canSend, let client, let selectedAgentID else { return }
+    guard canSend, let client, let selectedAgentID, let session = selectedSessionName else {
+      return
+    }
     do {
-      try await client.send(key: key, to: selectedAgentID)
+      try await client.send(key: key, to: selectedAgentID, session: session)
       errorMessage = nil
       successFeedback += 1
     } catch {
@@ -121,9 +139,11 @@ final class AppModel {
   }
 
   func send(_ action: RemoteAction) async {
-    guard canSendAction, let client, let selectedAgentID else { return }
+    guard canSendAction, let client, let selectedAgentID, let session = selectedSessionName else {
+      return
+    }
     do {
-      try await client.send(action: action, to: selectedAgentID)
+      try await client.send(action: action, to: selectedAgentID, session: session)
       errorMessage = nil
       successFeedback += 1
     } catch {
@@ -132,11 +152,14 @@ final class AppModel {
   }
 
   func send(text: String, submit: Bool = true) async {
-    guard canSend, let client, let selectedAgentID else { return }
+    guard canSend, let client, let selectedAgentID, let session = selectedSessionName else {
+      return
+    }
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return }
     do {
-      try await client.send(text: trimmed, submit: submit, to: selectedAgentID)
+      try await client.send(
+        text: trimmed, submit: submit, to: selectedAgentID, session: session)
       errorMessage = nil
       successFeedback += 1
     } catch {
@@ -276,12 +299,29 @@ final class AppModel {
     case .connectionState(let state):
       connectionState = state
       if state != .connected { herdrAvailability = .unavailable }
-    case .herdrAvailability(let availability):
-      herdrAvailability = availability
-    case .agents(let snapshot):
-      agents = snapshot
-      if let selectedAgentID, !snapshot.contains(where: { $0.id == selectedAgentID }) {
-        self.selectedAgentID = nil
+    case .sessions(let snapshot):
+      sessions = snapshot
+      let names = Set(snapshot.map(\.name))
+      agentsBySession = agentsBySession.filter { names.contains($0.key) }
+      availabilityBySession = availabilityBySession.filter { names.contains($0.key) }
+
+      if let selectedSessionName, names.contains(selectedSessionName) {
+        refreshSelectedSession()
+      } else if let fallback = snapshot.first(where: \.isDefault) ?? snapshot.first {
+        activateSession(fallback.name)
+      } else {
+        activateSession(nil)
+      }
+    case .herdrAvailability(let session, let availability):
+      availabilityBySession[session] = availability
+      if session == selectedSessionName { herdrAvailability = availability }
+    case .agents(let session, let snapshot):
+      agentsBySession[session] = snapshot
+      if session == selectedSessionName {
+        agents = snapshot
+        if let selectedAgentID, !snapshot.contains(where: { $0.id == selectedAgentID }) {
+          self.selectedAgentID = nil
+        }
       }
     case .error(let error):
       report(error)
@@ -303,6 +343,11 @@ final class AppModel {
       client = newClient
       connectionState = .connecting
       herdrAvailability = .unavailable
+      sessions = []
+      agents = []
+      selectedAgentID = nil
+      agentsBySession = [:]
+      availabilityBySession = [:]
       errorMessage = nil
       eventTask = Task { [weak self, newClient] in
         await newClient.start()
@@ -315,6 +360,22 @@ final class AppModel {
     } catch {
       report(error)
       return false
+    }
+  }
+
+  private func activateSession(_ name: String?) {
+    if selectedSessionName != name { selectedAgentID = nil }
+    selectedSessionName = name
+    refreshSelectedSession()
+    UserDefaults.standard.set(name, forKey: "selectedHerdrSession")
+  }
+
+  private func refreshSelectedSession() {
+    agents = selectedSessionName.flatMap { agentsBySession[$0] } ?? []
+    herdrAvailability =
+      selectedSessionName.flatMap { availabilityBySession[$0] } ?? .unavailable
+    if let selectedAgentID, !agents.contains(where: { $0.id == selectedAgentID }) {
+      self.selectedAgentID = nil
     }
   }
 

@@ -78,12 +78,14 @@ public actor BridgeClient {
     emit(.connectionState(.stopped))
   }
 
-  public func requestSnapshot() async throws -> [BridgeAgent] {
-    let message = try await request(.requestSnapshot)
-    guard case .agentSnapshot(_, let agents) = message else {
+  public func requestSnapshot(session: String) async throws -> [BridgeAgent] {
+    let message = try await request(.requestSnapshot(session: session))
+    guard case .agentSnapshot(_, let responseSession, let agents) = message,
+      responseSession == session
+    else {
       throw BridgeError.protocolViolation("snapshot response is invalid")
     }
-    emit(.agents(agents))
+    emit(.agents(session: session, agents: agents))
     return agents
   }
 
@@ -94,34 +96,36 @@ public actor BridgeClient {
     }
   }
 
-  public func focus(agentID: String) async throws {
-    let message = try await request(.focusAgent(agentID: agentID))
+  public func focus(agentID: String, session: String) async throws {
+    let message = try await request(.focusAgent(session: session, agentID: agentID))
     guard case .agentFocused = message else {
       throw BridgeError.protocolViolation("focus response is invalid")
     }
   }
 
-  public func send(key: RemoteKey, to agentID: String) async throws {
-    let message = try await request(.sendKey(agentID: agentID, key: key))
+  public func send(key: RemoteKey, to agentID: String, session: String) async throws {
+    let message = try await request(.sendKey(session: session, agentID: agentID, key: key))
     guard case .inputAcknowledged = message else {
       throw BridgeError.protocolViolation("key response is invalid")
     }
   }
 
-  public func send(action: RemoteAction, to agentID: String) async throws {
-    let message = try await request(.sendAction(agentID: agentID, action: action))
+  public func send(action: RemoteAction, to agentID: String, session: String) async throws {
+    let message = try await request(
+      .sendAction(session: session, agentID: agentID, action: action))
     guard case .inputAcknowledged = message else {
       throw BridgeError.protocolViolation("action response is invalid")
     }
   }
 
-  public func send(text: String, submit: Bool, to agentID: String) async throws {
+  public func send(text: String, submit: Bool, to agentID: String, session: String) async throws {
     guard text.utf8.count <= 8_192,
       !text.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
     else {
       throw BridgeError.invalidText
     }
-    let message = try await request(.sendText(agentID: agentID, text: text, submit: submit))
+    let message = try await request(
+      .sendText(session: session, agentID: agentID, text: text, submit: submit))
     guard case .inputAcknowledged = message else {
       throw BridgeError.protocolViolation("text response is invalid")
     }
@@ -257,10 +261,12 @@ public actor BridgeClient {
     }
 
     switch message {
-    case .agentSnapshot(_, let agents):
-      emit(.agents(agents))
-    case .herdrState(let state):
-      emit(.herdrAvailability(state))
+    case .sessionSnapshot(let sessions):
+      emit(.sessions(sessions))
+    case .agentSnapshot(_, let session, let agents):
+      emit(.agents(session: session, agents: agents))
+    case .herdrState(let session, let state):
+      emit(.herdrAvailability(session: session, state: state))
     case .error:
       emit(.error(remoteError(from: message)))
     case .authenticated, .agentFocused, .inputAcknowledged, .pong, .unknown:

@@ -6,18 +6,19 @@ import Testing
 @MainActor
 @Test
 func agentOrderingAndKeypadAvailability() {
-  let model = AppModel(configuredHost: "", configuredToken: "")
+  let model = AppModel(configuredHost: "", configuredToken: "", selectedSessionName: "default")
   let working = BridgeAgent(id: "working", kind: "codex", name: "Codex", status: .working)
   let blocked = BridgeAgent(id: "blocked", kind: "claude", name: "Claude", status: .blocked)
 
-  model.apply(.agents([working, blocked]))
+  model.apply(.sessions([BridgeSession(name: "default", isDefault: true)]))
+  model.apply(.agents(session: "default", agents: [working, blocked]))
   #expect(model.displayAgents.map(\.id) == ["blocked", "working"])
 
   model.apply(.connectionState(.connected))
-  model.apply(.herdrAvailability(.connected))
+  model.apply(.herdrAvailability(session: "default", state: .connected))
   #expect(!model.canSend)
 
-  model.apply(.agents([blocked]))
+  model.apply(.agents(session: "default", agents: [blocked]))
   #expect(model.selectedAgentID == nil)
   #expect(!model.canSend)
   #expect(!model.canSendAction)
@@ -60,11 +61,14 @@ func agentIconAndFolderPresentation() {
 @MainActor
 @Test
 func sendAndVoiceAreGatedUntilAgentSelected() async {
-  let model = AppModel(configuredHost: "", configuredToken: "")
+  let model = AppModel(configuredHost: "", configuredToken: "", selectedSessionName: "default")
+  model.apply(.sessions([BridgeSession(name: "default", isDefault: true)]))
   model.apply(.connectionState(.connected))
-  model.apply(.herdrAvailability(.connected))
+  model.apply(.herdrAvailability(session: "default", state: .connected))
   model.apply(
-    .agents([BridgeAgent(id: "a1", kind: "codex", name: "Codex", status: .blocked)])
+    .agents(
+      session: "default",
+      agents: [BridgeAgent(id: "a1", kind: "codex", name: "Codex", status: .blocked)])
   )
   #expect(!model.canSend)
   #expect(!model.canSendAction)
@@ -75,4 +79,30 @@ func sendAndVoiceAreGatedUntilAgentSelected() async {
 
   model.beginVoice()
   #expect(model.voiceState == .notPrepared)
+}
+
+@MainActor
+@Test
+func sessionSelectionRestoresAndFallsBackWithoutMacAction() {
+  let model = AppModel(configuredHost: "", configuredToken: "", selectedSessionName: "team")
+  let defaultSession = BridgeSession(name: "default", isDefault: true)
+  let teamSession = BridgeSession(name: "team")
+  let defaultAgent = BridgeAgent(
+    id: "w1:p1", kind: "codex", name: "Default", status: .working)
+  let teamAgent = BridgeAgent(id: "w1:p1", kind: "claude", name: "Team", status: .blocked)
+
+  model.apply(.sessions([defaultSession, teamSession]))
+  model.apply(.agents(session: "default", agents: [defaultAgent]))
+  model.apply(.agents(session: "team", agents: [teamAgent]))
+  #expect(model.selectedSessionName == "team")
+  #expect(model.agents == [teamAgent])
+
+  model.select(defaultSession)
+  #expect(model.selectedSessionName == "default")
+  #expect(model.agents == [defaultAgent])
+
+  model.select(teamSession)
+  model.apply(.sessions([defaultSession]))
+  #expect(model.selectedSessionName == "default")
+  #expect(model.agents == [defaultAgent])
 }
