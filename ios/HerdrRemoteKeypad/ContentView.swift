@@ -2,6 +2,7 @@ import HerdrRemoteClient
 import SwiftUI
 
 struct ContentView: View {
+  @Environment(\.scenePhase) private var scenePhase
   @State private var model = AppModel()
   @State private var showingSettings = false
   @State private var placeholderFeedback = 0
@@ -33,8 +34,14 @@ struct ContentView: View {
             cell: cell,
             gap: gap,
             enabled: model.canSend,
+            voiceState: model.voiceState,
+            partialTranscript: model.partialTranscript,
             send: { key in Task { await model.send(key) } },
-            tapPlaceholder: tapPlaceholder
+            tapPlaceholder: tapPlaceholder,
+            beginVoice: { model.beginVoice() },
+            endVoice: { Task { await model.endVoiceAndSend() } },
+            cancelVoice: { Task { await model.cancelVoice() } },
+            retryVoice: { Task { await model.prepareVoice() } }
           )
         }
         .frame(width: width)
@@ -52,7 +59,26 @@ struct ContentView: View {
     }
     .task {
       model.start()
-      if !model.hasConfiguration { showingSettings = true }
+      if model.hasConfiguration {
+        await model.prepareVoice()
+      } else {
+        showingSettings = true
+      }
+    }
+    .onChange(of: showingSettings) { _, isShowing in
+      guard !isShowing, model.hasConfiguration else { return }
+      Task { await model.prepareVoice() }
+    }
+    .onChange(of: scenePhase) { _, phase in
+      if phase == .active {
+        guard model.hasConfiguration else { return }
+        Task { await model.prepareVoice() }
+      } else {
+        Task { await model.cancelVoice() }
+      }
+    }
+    .onChange(of: model.canSend) { _, canSend in
+      if !canSend { Task { await model.cancelVoice() } }
     }
   }
 
@@ -240,8 +266,14 @@ private struct ControlBank: View {
   let cell: CGFloat
   let gap: CGFloat
   let enabled: Bool
+  let voiceState: VoiceState
+  let partialTranscript: String
   let send: (RemoteKey) -> Void
   let tapPlaceholder: () -> Void
+  let beginVoice: () -> Void
+  let endVoice: () -> Void
+  let cancelVoice: () -> Void
+  let retryVoice: () -> Void
 
   private var columns: [GridItem] {
     Array(repeating: GridItem(.fixed(cell), spacing: gap), count: 2)
@@ -249,6 +281,10 @@ private struct ControlBank: View {
 
   var body: some View {
     VStack(spacing: gap) {
+      if showsVoiceStatus {
+        voiceStatusLine
+      }
+
       HStack(spacing: gap) {
         DPad(cell: cell, enabled: enabled, send: send)
           .frame(width: cell * 2 + gap, height: cell * 2 + gap)
@@ -268,9 +304,172 @@ private struct ControlBank: View {
         .frame(width: cell * 2 + gap)
       }
 
-      PlaceholderKey(symbol: "mic", accessibilityName: "Voice", action: tapPlaceholder)
-        .frame(width: cell * 2 + gap, height: cell)
+      VoiceKey(
+        enabled: enabled && (voiceState == .ready || voiceState == .listening),
+        isListening: voiceState == .listening,
+        beginVoice: beginVoice,
+        endVoice: endVoice,
+        cancelVoice: cancelVoice
+      )
+      .frame(width: cell * 2 + gap, height: cell)
     }
+  }
+
+  private var showsVoiceStatus: Bool {
+    switch voiceState {
+    case .preparing, .listening, .finalizing, .failed:
+      true
+    case .notPrepared, .ready:
+      !partialTranscript.isEmpty
+    }
+  }
+
+  @ViewBuilder
+  private var voiceStatusLine: some View {
+    Group {
+      switch voiceState {
+      case .preparing:
+        Text("Preparing voice…")
+          .foregroundStyle(Palette.secondaryText)
+          .accessibilityLabel("Preparing voice")
+      case .listening:
+        Text(partialTranscript.isEmpty ? "Listening…" : partialTranscript)
+          .foregroundStyle(Palette.secondaryText)
+          .accessibilityLabel(partialTranscript.isEmpty ? "Listening" : partialTranscript)
+      case .finalizing:
+        Text("Finishing dictation…")
+          .foregroundStyle(Palette.secondaryText)
+          .accessibilityLabel("Finishing dictation")
+      case .failed(let message):
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+          VStack(alignment: .leading, spacing: 3) {
+            Text(message)
+              .foregroundStyle(Palette.blocked)
+            if !partialTranscript.isEmpty {
+              Text(partialTranscript)
+                .foregroundStyle(Palette.secondaryText)
+            }
+          }
+          Spacer(minLength: 0)
+          Button("Retry", action: retryVoice)
+            .buttonStyle(.borderless)
+        }
+      case .notPrepared, .ready:
+        if !partialTranscript.isEmpty {
+          Text(partialTranscript)
+            .foregroundStyle(Palette.secondaryText)
+        }
+      }
+    }
+    .font(.system(size: 13, weight: .medium, design: .rounded))
+    .lineLimit(2)
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
+private struct VoiceKey: View {
+  let enabled: Bool
+  let isListening: Bool
+  let beginVoice: () -> Void
+  let endVoice: () -> Void
+  let cancelVoice: () -> Void
+
+  @GestureState private var isPressed = false
+  @State private var isHolding = false
+
+  var body: some View {
+    Image(systemName: isListening ? "mic.fill" : "mic")
+      .font(.system(size: 30, weight: .medium))
+      .foregroundStyle(isListening ? Palette.blue : Palette.buttonIcon)
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .opacity(enabled ? 1 : 0.5)
+      .animation(.easeOut(duration: 0.18), value: enabled)
+      .animation(.easeOut(duration: 0.12), value: isListening)
+      .background {
+        TactileKeyChrome(isPressed: isPressed || isListening, primary: isListening)
+      }
+      .contentShape(RoundedRectangle(cornerRadius: 21, style: .continuous))
+      .gesture(
+        DragGesture(minimumDistance: 0)
+          .updating($isPressed) { _, pressed, _ in
+            pressed = true
+          }
+          .onEnded { _ in
+            guard isHolding else { return }
+            isHolding = false
+            if enabled { endVoice() } else { cancelVoice() }
+          }
+      )
+      .onChange(of: isPressed) { wasPressed, isPressed in
+        if isPressed {
+          guard enabled, !isHolding else { return }
+          isHolding = true
+          beginVoice()
+        } else if wasPressed, isHolding {
+          isHolding = false
+          cancelVoice()
+        }
+      }
+      .disabled(!enabled && !isListening)
+      .accessibilityLabel("Voice")
+      .accessibilityHint(
+        isListening
+          ? "Activate to send the dictation and Enter to the selected agent."
+          : "Hold to speak and release to send. With VoiceOver, activate once to start."
+      )
+      .accessibilityAddTraits([.isButton, .startsMediaSession])
+      .accessibilityAction(.default) {
+        guard enabled || isListening else { return }
+        if isListening {
+          enabled ? endVoice() : cancelVoice()
+        } else {
+          beginVoice()
+        }
+      }
+      .accessibilityActions {
+        if isListening {
+          Button("Cancel dictation", action: cancelVoice)
+        }
+      }
+  }
+}
+
+/// Shared tactile chrome for keys that are not Button-based (hold-to-talk).
+private struct TactileKeyChrome: View {
+  var isPressed: Bool
+  var primary = false
+
+  var body: some View {
+    ZStack {
+      RoundedRectangle(cornerRadius: 21, style: .continuous)
+        .fill(primary ? Palette.blueLip : Palette.keyLip)
+        .offset(y: 4)
+
+      ZStack {
+        RoundedRectangle(cornerRadius: 21, style: .continuous)
+          .fill(
+            LinearGradient(
+              colors: primary
+                ? [Palette.blueHighlight, Palette.blue]
+                : [.white, Palette.keyFace],
+              startPoint: .topLeading,
+              endPoint: .bottomTrailing
+            )
+          )
+        RoundedRectangle(cornerRadius: 21, style: .continuous)
+          .stroke(primary ? .white.opacity(0.28) : .white.opacity(0.95), lineWidth: 1)
+        KeyDish(primary: primary)
+          .frame(width: keyDishDiameter, height: keyDishDiameter)
+      }
+      .offset(y: isPressed ? 3 : 0)
+    }
+    .shadow(
+      color: Palette.shadow.opacity(isPressed ? 0.05 : 0.1),
+      radius: isPressed ? 1 : 3,
+      y: isPressed ? 2 : 4
+    )
+    .scaleEffect(isPressed ? 0.99 : 1)
+    .animation(.easeOut(duration: 0.09), value: isPressed)
   }
 }
 

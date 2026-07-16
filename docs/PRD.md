@@ -53,7 +53,8 @@ The first phone build adds:
 
 - a four-column SwiftUI agent-key grid with clear selected-agent identity;
 - a connected D-pad, Enter, Tab, and haptics;
-- active-looking Accept, Deny, and Voice placeholders that provide local press feedback without sending remote input;
+- active-looking Accept and Deny placeholders that provide local press feedback without sending remote input;
+- hold-to-talk Voice that converts speech on-device and sends text plus Enter to the selected agent;
 - connection state, automatic reconnect, and disabled controls when unavailable;
 - manual bridge address and token entry with Keychain storage.
 
@@ -83,8 +84,13 @@ The complete MVP additionally includes typed instructions and hold-to-talk local
 
 ### Voice and speech
 
-- Use Apple's on-device/native speech APIs where available.
-- Default to hold, speak, release, then send text plus Enter.
+- Use Apple's on-device SpeechAnalyzer and DictationTranscriber (iOS 26+) for hold-to-talk dictation.
+- Default to hold, speak, release, then send text plus Enter through the existing bridge `send_text` path.
+- Prepare speech after saved bridge setup is available so the first press does not perform model setup.
+- Request microphone access with the native asynchronous audio API; do not request the legacy speech-recognition permission.
+- Cancel capture when the gesture is interrupted or the app leaves the foreground, and never send partial text after a recognition or finalization failure.
+- With VoiceOver, use one activation to start, a second to send, and a separate Cancel dictation action.
+- Keep audio on the phone; never stream microphone audio through the Herdr bridge.
 - Provide review-before-send as a safer later option.
 - Keep text-to-speech out of the initial keypad release because the external screen remains the source of context.
 
@@ -121,4 +127,6 @@ The complete MVP additionally includes typed instructions and hold-to-talk local
 - The selected keypad target remains client state, while each agent tap focuses the matching Herdr pane before changing that selection.
 - Protocol v1 was revised in place because no released client depended on its earlier terminal-streaming draft.
 - The shared Swift package targets iOS 18 and newer.
-- Dedicated Accept, Deny, and Voice keys remain local-only placeholders until their integrations have enough structured data to send safe remote input.
+- The iPhone app targets iOS 26 and newer so it can use SpeechAnalyzer for on-device dictation.
+- Dedicated Accept and Deny keys remain local-only placeholders until their integrations have enough structured data to send safe remote input.
+- The Voice key uses on-device hold-to-talk dictation and sends finalized text through the bridge.

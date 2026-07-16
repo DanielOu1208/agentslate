@@ -14,9 +14,12 @@ This repository contains the working Rust bridge, command-line probe, reusable S
 - Use the same protocol from the Rust probe or the Swift `HerdrRemoteClient` package.
 - Configure the bridge manually on iPhone with Keychain-backed token storage.
 - Select and focus a live agent from a four-column icon grid with compact working-folder labels, then use a tactile D-pad, Enter, and Tab control bank.
-- Preview active-looking Accept, Deny, and Voice keys with local press feedback while their remote integrations remain deferred.
+- Hold the Voice key to dictate on-device; release to send text plus Enter to the selected agent.
+- Preview active-looking Accept and Deny keys with local press feedback while their remote integrations remain deferred.
 
 Terminal output is intentionally not sent to the phone. The keypad is designed for use while the agent's screen remains visible elsewhere.
+
+Voice prepares after an existing configuration loads, or after a new Bridge setup is saved and dismissed. The app requests microphone access only; speech recognition and its model stay on the iPhone. With VoiceOver, activate Voice once to start, activate it again to send, or use the Cancel dictation action.
 
 ## Build and test
 
@@ -26,6 +29,7 @@ Requirements:
 - Swift 6 or newer for builds; full Xcode for the standard Swift test runner
 - Herdr 0.7.4 or newer running locally
 - Tailscale for non-local connections
+- iOS 26 or newer for the iPhone app's on-device speech support
 
 ```sh
 cargo build

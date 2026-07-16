@@ -13,6 +13,7 @@
 		1B0000000000000000000004 /* AppModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000000000000000000004 /* AppModelTests.swift */; };
 		1B0000000000000000000005 /* HerdrRemoteClient in Frameworks */ = {isa = PBXBuildFile; productRef = 1F0000000000000000000001 /* HerdrRemoteClient */; };
 		1B0000000000000000000006 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1A0000000000000000000007 /* Assets.xcassets */; };
+		1B0000000000000000000007 /* VoiceDictationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000000000000000000008 /* VoiceDictationController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -33,6 +34,7 @@
 		1A0000000000000000000005 /* HerdrRemoteKeypad.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HerdrRemoteKeypad.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A0000000000000000000006 /* HerdrRemoteKeypadTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HerdrRemoteKeypadTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A0000000000000000000007 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		1A0000000000000000000008 /* VoiceDictationController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceDictationController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -69,6 +71,7 @@
 				1A0000000000000000000001 /* HerdrRemoteKeypadApp.swift */,
 				1A0000000000000000000002 /* ContentView.swift */,
 				1A0000000000000000000003 /* AppModel.swift */,
+				1A0000000000000000000008 /* VoiceDictationController.swift */,
 				1A0000000000000000000007 /* Assets.xcassets */,
 			);
 			path = HerdrRemoteKeypad;
@@ -199,6 +202,7 @@
 				1B0000000000000000000001 /* HerdrRemoteKeypadApp.swift in Sources */,
 				1B0000000000000000000002 /* ContentView.swift in Sources */,
 				1B0000000000000000000003 /* AppModel.swift in Sources */,
+				1B0000000000000000000007 /* VoiceDictationController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -261,10 +265,11 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Herdr;
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connects to your Herdr bridge over your private network.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Records spoken instructions that stay on this iPhone and are sent as text to your selected Herdr agent.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -291,10 +296,11 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Herdr;
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connects to your Herdr bridge over your private network.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Records spoken instructions that stay on this iPhone and are sent as text to your selected Herdr agent.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -317,7 +323,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.danielou.HerdrRemoteKeypadTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -335,7 +341,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.danielou.HerdrRemoteKeypadTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;

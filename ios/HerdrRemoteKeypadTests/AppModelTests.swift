@@ -40,3 +40,22 @@ func agentIconAndFolderPresentation() {
   #expect(agentFolderName(cwd: "/projects/remote-keypad", workspace: "workspace") == "remote-keypad")
   #expect(agentFolderName(cwd: nil, workspace: "workspace") == "workspace")
 }
+
+@MainActor
+@Test
+func sendAndVoiceAreGatedUntilAgentSelected() async {
+  let model = AppModel(configuredHost: "", configuredToken: "")
+  model.apply(.connectionState(.connected))
+  model.apply(.herdrAvailability(.connected))
+  model.apply(
+    .agents([BridgeAgent(id: "a1", kind: "codex", name: "Codex", status: .blocked)])
+  )
+  #expect(!model.canSend)
+  #expect(model.voiceState == .notPrepared)
+
+  await model.send(text: "hello", submit: true)
+  #expect(model.successFeedback == 0)
+
+  model.beginVoice()
+  #expect(model.voiceState == .notPrepared)
+}

@@ -3,6 +3,15 @@ import HerdrRemoteClient
 import Observation
 import Security
 
+enum VoiceState: Equatable {
+  case notPrepared
+  case preparing
+  case ready
+  case listening
+  case finalizing
+  case failed(String)
+}
+
 @MainActor
 @Observable
 final class AppModel {
@@ -15,10 +24,17 @@ final class AppModel {
   private(set) var errorFeedback = 0
   private(set) var configuredHost: String
   private(set) var configuredToken: String
+  private(set) var voiceState: VoiceState = .notPrepared
+  private(set) var partialTranscript = ""
 
   @ObservationIgnored private var client: BridgeClient?
   @ObservationIgnored private var eventTask: Task<Void, Never>?
   @ObservationIgnored private var started = false
+  @ObservationIgnored private let dictation = VoiceDictationController()
+  @ObservationIgnored private var voiceStartTask: Task<Void, Never>?
+  @ObservationIgnored private var voiceEndInProgress = false
+  @ObservationIgnored private var voiceCancelInProgress = false
+  @ObservationIgnored private var voiceSessionGeneration = 0
 
   init(
     configuredHost: String = UserDefaults.standard.string(forKey: "bridgeHost") ?? "",
@@ -61,7 +77,7 @@ final class AppModel {
     guard !started else { return }
     started = true
     guard hasConfiguration else { return }
-    connect(host: configuredHost, token: configuredToken, save: false)
+    _ = connect(host: configuredHost, token: configuredToken, save: false)
   }
 
   @discardableResult
@@ -97,6 +113,146 @@ final class AppModel {
     } catch {
       report(error)
     }
+  }
+
+  func send(text: String, submit: Bool = true) async {
+    guard canSend, let client, let selectedAgentID else { return }
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return }
+    do {
+      try await client.send(text: trimmed, submit: submit, to: selectedAgentID)
+      errorMessage = nil
+      successFeedback += 1
+    } catch {
+      report(error)
+    }
+  }
+
+  func prepareVoice() async {
+    guard
+      voiceState != .preparing,
+      voiceState != .ready,
+      voiceState != .listening,
+      voiceState != .finalizing
+    else {
+      return
+    }
+
+    partialTranscript = ""
+    voiceState = .preparing
+    do {
+      try await dictation.prepare()
+      try Task.checkCancellation()
+      voiceState = .ready
+    } catch is CancellationError {
+      voiceState = .notPrepared
+    } catch {
+      handleVoiceFailure(error)
+    }
+  }
+
+  func beginVoice() {
+    guard
+      canSend,
+      voiceState == .ready,
+      voiceStartTask == nil,
+      !voiceEndInProgress,
+      !voiceCancelInProgress
+    else { return }
+    voiceSessionGeneration &+= 1
+    let generation = voiceSessionGeneration
+    partialTranscript = ""
+    voiceStartTask = Task { [weak self] in
+      guard let self else { return }
+      do {
+        try await self.dictation.start(
+          onPartial: { [weak self] partial in
+            guard let self, generation == self.voiceSessionGeneration else { return }
+            self.partialTranscript = partial
+          },
+          onFailure: { [weak self] error in
+            guard let self, generation == self.voiceSessionGeneration else { return }
+            self.handleVoiceFailure(error)
+          }
+        )
+        try Task.checkCancellation()
+        guard generation == self.voiceSessionGeneration else {
+          await self.dictation.cancel()
+          return
+        }
+        self.voiceState = self.voiceEndInProgress ? .finalizing : .listening
+      } catch is CancellationError {
+        await self.dictation.cancel()
+        if generation == self.voiceSessionGeneration {
+          self.voiceState = self.dictation.isPrepared ? .ready : .notPrepared
+        }
+      } catch {
+        if generation == self.voiceSessionGeneration {
+          self.handleVoiceFailure(error)
+        }
+      }
+      if generation == self.voiceSessionGeneration {
+        self.voiceStartTask = nil
+      }
+    }
+  }
+
+  func endVoiceAndSend() async {
+    guard
+      !voiceEndInProgress,
+      voiceState == .listening || voiceStartTask != nil
+    else { return }
+    voiceEndInProgress = true
+    let generation = voiceSessionGeneration
+    voiceState = .finalizing
+    defer {
+      if generation == voiceSessionGeneration {
+        voiceEndInProgress = false
+      }
+    }
+
+    if let voiceStartTask {
+      await voiceStartTask.value
+    }
+    guard generation == voiceSessionGeneration, dictation.isListening else { return }
+    do {
+      let text = try await dictation.finalize()
+      guard generation == voiceSessionGeneration, !Task.isCancelled else { return }
+      let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+      if !trimmed.isEmpty {
+        await send(text: trimmed, submit: true)
+      }
+      guard generation == voiceSessionGeneration else { return }
+      voiceState = .ready
+      partialTranscript = ""
+    } catch is CancellationError {
+      if generation == voiceSessionGeneration {
+        voiceState = dictation.isPrepared ? .ready : .notPrepared
+      }
+    } catch {
+      if generation == voiceSessionGeneration {
+        handleVoiceFailure(error)
+      }
+    }
+  }
+
+  func cancelVoice() async {
+    guard
+      !voiceCancelInProgress,
+      voiceState == .listening || voiceState == .finalizing || voiceStartTask != nil
+    else { return }
+    voiceCancelInProgress = true
+    defer { voiceCancelInProgress = false }
+    voiceSessionGeneration &+= 1
+    voiceEndInProgress = false
+    voiceState = .finalizing
+    let startTask = voiceStartTask
+    startTask?.cancel()
+    await startTask?.value
+    await dictation.cancel()
+    voiceStartTask = nil
+    voiceState = dictation.isPrepared ? .ready : .notPrepared
+    partialTranscript = ""
   }
 
   func apply(_ event: BridgeEvent) {
@@ -149,6 +305,13 @@ final class AppModel {
   private func report(_ error: any Error) {
     errorMessage = error.localizedDescription
     errorFeedback += 1
+  }
+
+  private func handleVoiceFailure(_ error: any Error) {
+    let failedState = VoiceState.failed(error.localizedDescription)
+    partialTranscript = dictation.lastPartial
+    if voiceState != failedState { errorFeedback += 1 }
+    voiceState = failedState
   }
 }
 
