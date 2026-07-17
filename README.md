@@ -58,17 +58,12 @@ For live Herdr control, you also need:
 
 ## Try it
 
-The Homebrew tap and TestFlight beta are not published yet, so the current build runs from source.
-
 ### 1. Start the Mac bridge
 
-Install Rust 1.85 or newer, then:
-
 ```sh
-cargo build --locked
-cargo test --locked
-cargo run -- doctor
-cargo run -- serve
+brew install DanielOu1208/agentslate/agentslate
+agentslate doctor
+brew services start agentslate
 ```
 
 AgentSlate listens only on loopback or Tailscale addresses. It does not offer a public or general-LAN listening mode.
@@ -79,10 +74,10 @@ Open `ios/AgentSlate.xcodeproj` in Xcode, select an iPhone running iOS 26 or new
 
 ### 3. Pair the iPhone
 
-With the bridge running, create a pairing code in another terminal:
+With the bridge running, create a pairing code:
 
 ```sh
-cargo run -- pair
+agentslate pair
 ```
 
 In the iPhone app, enter the Mac's Tailscale IPv4 address and the six-digit code. You can find the address with `tailscale ip -4`; AgentSlate uses port 8765 automatically.
@@ -93,11 +88,11 @@ In the iPhone app, enter the Mac's Tailscale IPv4 address and the six-digit code
 
 The code expires after ten minutes, works once, and locks after five failed attempts. A successful pairing creates a separate device credential for that iPhone.
 
-Manage paired phones from source with:
+Manage paired phones with:
 
 ```sh
-cargo run -- devices list
-cargo run -- devices revoke DEVICE_ID
+agentslate devices list
+agentslate devices revoke DEVICE_ID
 ```
 
 Use **Forget Bridge** in the iPhone app to revoke that phone and remove its local credentials. If the Mac is offline, AgentSlate clears the phone and explains how to revoke the remaining Mac record later.

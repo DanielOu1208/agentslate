@@ -123,7 +123,7 @@ Exit criterion: the app is reliable enough for repeated daily supervision.
 - [ ] Complete formal trademark clearance.
 - [x] Save `AgentSlate` as the App Store Connect name.
 - [x] Rewrite Git history author/committer emails and verify the personal address is absent.
-- [ ] Publish the repository, Pages site, GitHub release, and Homebrew tap only after owner approval.
+- [x] Publish the repository, Pages site, GitHub release, and Homebrew tap only after owner approval.
 - [x] Upload build `0.1.0 (3)` and enable it for the existing internal TestFlight group.
 - [ ] Upload and distribute an external TestFlight build only after owner approval.
 - [ ] Install the approved external TestFlight build on reviewers' phones.

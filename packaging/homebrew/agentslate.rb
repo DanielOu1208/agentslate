@@ -2,7 +2,7 @@ class Agentslate < Formula
   desc "Tailscale-only remote control bridge for Herdr"
   homepage "https://github.com/DanielOu1208/agentslate"
   url "https://github.com/DanielOu1208/agentslate/archive/refs/tags/v0.1.0.tar.gz"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000" # Replace after publishing v0.1.0.
+  sha256 "e65fcf1d965ca104a339332e9ffa4d1450ac6d4cdb5d0f54d832e29f505d6807"
   license "MIT"
 
   depends_on "rust" => :build

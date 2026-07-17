@@ -28,19 +28,19 @@ Before any public release:
 ## Source and Homebrew release
 
 - [x] Confirm the repository history contains no personal email, credentials, pairing codes, or machine-local files.
-- [ ] Pass the full CI workflow.
+- [x] Pass the full CI workflow.
 - [x] Confirm `THIRD_PARTY_NOTICES.md` is available in the repository and the app's Acknowledgements screen.
 - [x] Rename/configure the GitHub repository, description, and topics without changing visibility.
-- [ ] Enable GitHub Pages when the repository becomes public.
-- [ ] Create the `v0.1.0` source tag and archive only after approval.
-- [ ] Replace the placeholder SHA-256 in `packaging/homebrew/agentslate.rb` with the published source archive checksum.
-- [ ] Create `DanielOu1208/homebrew-agentslate` and copy the formula only after approval.
-- [ ] Verify a clean install, `brew services` start/stop/restart, pairing, upgrade, and uninstall.
-- [ ] Create GitHub release `v0.1.0` and make the repository public only after approval.
+- [x] Enable GitHub Pages when the repository becomes public.
+- [x] Create the `v0.1.0` source tag and archive only after approval.
+- [x] Replace the placeholder SHA-256 in `packaging/homebrew/agentslate.rb` with the published source archive checksum.
+- [x] Create `DanielOu1208/homebrew-agentslate` and copy the formula only after approval.
+- [x] Verify a clean install, `brew services` start/stop/restart, pairing, upgrade, and uninstall.
+- [x] Create GitHub release `v0.1.0` and make the repository public only after approval.
 
 Do not publish to crates.io, attach binary downloads, create bottles, notarize a separate installer, or add a custom updater for 0.1.0.
 
-Local release gates passed on July 16, 2026: Rust/Swift/iOS tests, static analysis, unsigned archive, App Store Connect–signed IPA export, privacy/notices/icon inspection, clean CLI source install, live Tailscale/Herdr doctor, and simulator onboarding/Demo Mode/settings review. Physical-iPhone acceptance and the hosted CI run remain open.
+Local release gates passed on July 16, 2026: Rust/Swift/iOS tests, static analysis, unsigned archive, App Store Connect–signed IPA export, privacy/notices/icon inspection, clean CLI source install, live Tailscale/Herdr doctor, Homebrew install and service lifecycle, and simulator onboarding/Demo Mode/settings review. The hosted CI run also passed. Physical-iPhone acceptance remains open.
 
 The owner chose to proceed with AgentSlate after reviewing the same-category naming conflict. Formal trademark clearance remains an independent owner responsibility.
 
