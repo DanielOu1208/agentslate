@@ -22,7 +22,7 @@ Before any public release:
 - [ ] Complete formal trademark clearance for `AgentSlate`.
 - [x] Project owner reviewed the July 16, 2026 AgentSlate name-search conflict and explicitly chose to proceed with the name.
 - [x] Project owner confirmed authorization to bundle the Factory Droid and Herdr marks; preserve the permission records with the release records.
-- [ ] Confirm the App Store Connect name can be reserved.
+- [x] Confirm the App Store Connect name can be reserved.
 - [x] Record the owner's approval to publish the open-source repository, Homebrew release, and external TestFlight beta.
 
 ## Source and Homebrew release
@@ -69,10 +69,11 @@ The owner chose to proceed with AgentSlate after reviewing the same-category nam
 
 ### TestFlight steps
 
-- [ ] Rename and reuse the unpublished Herdr Remote Keypad App Store Connect record and its existing bundle ID.
-- [ ] Upload a verified `0.1.0` build with a new, monotonically increasing build number.
-- [ ] Complete export compliance, privacy, beta description, feedback, and review fields.
-- [ ] Create the required internal testing group.
+- [x] Rename and reuse the unpublished Herdr Remote Keypad App Store Connect record and its existing bundle ID.
+- [x] Upload verified build `0.1.0 (3)`.
+- [x] Complete export compliance.
+- [ ] Complete privacy, beta description, feedback, and review fields required for external testing.
+- [x] Reuse the `Internal Testers` group and enable build `0.1.0 (3)` for its one tester.
 - [ ] Create the `AgentSlate Beta` external testing group.
 - [ ] Add only the selected external testers.
 - [ ] Submit the build only to TestFlight App Review.

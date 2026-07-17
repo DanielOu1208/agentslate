@@ -120,12 +120,14 @@ Exit criterion: the app is reliable enough for repeated daily supervision.
 - [x] Add one CI workflow for Rust, Swift package, iOS simulator, and unsigned archive checks.
 - [x] Prepare the Homebrew source formula with a release-checksum placeholder.
 - [x] Prepare TestFlight metadata, production metadata, and screenshot requirements.
-- [ ] Complete formal trademark clearance and confirm App Store name availability.
+- [ ] Complete formal trademark clearance.
+- [x] Save `AgentSlate` as the App Store Connect name.
 - [x] Rewrite Git history author/committer emails and verify the personal address is absent.
 - [ ] Publish the repository, Pages site, GitHub release, and Homebrew tap only after owner approval.
+- [x] Upload build `0.1.0 (3)` and enable it for the existing internal TestFlight group.
 - [ ] Upload and distribute an external TestFlight build only after owner approval.
 - [ ] Install the approved external TestFlight build on reviewers' phones.
-- [ ] Keep the production version in Prepare for Submission; do not submit it to App Review.
+- [x] Keep production version `0.1.0` in Prepare for Submission; do not submit it to App Review.
 
 Exit criterion: the external TestFlight build is approved and installed, public source/Homebrew artifacts are available, and the production App Store version remains an unsubmitted draft.
 
