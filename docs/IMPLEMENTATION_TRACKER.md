@@ -121,7 +121,7 @@ Exit criterion: the app is reliable enough for repeated daily supervision.
 - [x] Prepare the Homebrew source formula with a release-checksum placeholder.
 - [x] Prepare TestFlight metadata, production metadata, and screenshot requirements.
 - [ ] Complete formal trademark clearance and confirm App Store name availability.
-- [ ] Rewrite Git history author/committer emails and verify the personal address is absent.
+- [x] Rewrite Git history author/committer emails and verify the personal address is absent.
 - [ ] Publish the repository, Pages site, GitHub release, and Homebrew tap only after owner approval.
 - [ ] Upload and distribute an external TestFlight build only after owner approval.
 - [ ] Install the approved external TestFlight build on reviewers' phones.
@@ -164,6 +164,7 @@ Exit criterion: the external TestFlight build is approved and installed, public 
 | 2026-07-16 | Replace the shared token with protocol v3 device pairing | Short-lived attempt-limited codes simplify onboarding; separate revocable 256-bit credentials provide ongoing authentication |
 | 2026-07-16 | Keep pairing manual instead of adding QR setup | A six-digit code and Tailscale address cover the beta without a camera flow or another dependency |
 | 2026-07-16 | Stop the release workflow after external TestFlight | Production App Store review and release require a separate explicit owner decision after beta feedback |
+| 2026-07-16 | Pause publication after refreshing the AgentSlate name search | Another developer recently announced an AgentSlate product in the coding-agent category, so the private release candidate stays unpublished until the owner chooses a different name or obtains independent clearance |
 
 ## Verification evidence
 

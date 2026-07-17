@@ -20,13 +20,14 @@ The project owner has authorized preparation and publication of the open-source 
 Before any public release:
 
 - [ ] Complete formal trademark clearance for `AgentSlate`.
+- [ ] Resolve the July 16, 2026 name-search conflict with another recently announced coding-agent product called AgentSlate before reserving names or publishing.
 - [x] Project owner confirmed authorization to bundle the Factory Droid and Herdr marks; preserve the permission records with the release records.
 - [ ] Confirm the App Store Connect name can be reserved.
 - [x] Record the owner's approval to publish the open-source repository, Homebrew release, and external TestFlight beta.
 
 ## Source and Homebrew release
 
-- [ ] Confirm the repository history contains no personal email, credentials, pairing codes, or machine-local files.
+- [x] Confirm the repository history contains no personal email, credentials, pairing codes, or machine-local files.
 - [ ] Pass the full CI workflow.
 - [x] Confirm `THIRD_PARTY_NOTICES.md` is available in the repository and the app's Acknowledgements screen.
 - [ ] Rename/configure the GitHub repository, description, topics, and Pages without changing visibility.
@@ -39,6 +40,8 @@ Before any public release:
 Do not publish to crates.io, attach binary downloads, create bottles, notarize a separate installer, or add a custom updater for 0.1.0.
 
 Local release gates passed on July 16, 2026: Rust/Swift/iOS tests, static analysis, unsigned archive, App Store Connect–signed IPA export, privacy/notices/icon inspection, clean CLI source install, live Tailscale/Herdr doctor, and simulator onboarding/Demo Mode/settings review. Physical-iPhone acceptance and the hosted CI run remain open.
+
+Publication is paused because a refreshed public search found a recently announced coding-agent memory product already using the exact name AgentSlate. The existing GitHub repository remains private while the owner chooses whether to rename this project or proceed after independent clearance.
 
 ## TestFlight metadata
 
