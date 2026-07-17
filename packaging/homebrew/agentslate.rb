@@ -5,8 +5,8 @@ class Agentslate < Formula
   sha256 "0000000000000000000000000000000000000000000000000000000000000000" # Replace after publishing v0.1.0.
   license "MIT"
 
-  depends_on :macos
   depends_on "rust" => :build
+  depends_on :macos
 
   def install
     system "cargo", "install", *std_cargo_args

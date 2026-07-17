@@ -30,7 +30,8 @@ Before any public release:
 - [x] Confirm the repository history contains no personal email, credentials, pairing codes, or machine-local files.
 - [ ] Pass the full CI workflow.
 - [x] Confirm `THIRD_PARTY_NOTICES.md` is available in the repository and the app's Acknowledgements screen.
-- [ ] Rename/configure the GitHub repository, description, topics, and Pages without changing visibility.
+- [x] Rename/configure the GitHub repository, description, and topics without changing visibility.
+- [ ] Enable GitHub Pages when the repository becomes public.
 - [ ] Create the `v0.1.0` source tag and archive only after approval.
 - [ ] Replace the placeholder SHA-256 in `packaging/homebrew/agentslate.rb` with the published source archive checksum.
 - [ ] Create `DanielOu1208/homebrew-agentslate` and copy the formula only after approval.

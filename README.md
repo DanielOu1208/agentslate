@@ -142,7 +142,7 @@ Do not send test input to an agent doing valuable work. Live input acceptance sh
 - [Contributing](CONTRIBUTING.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)
 
-Public support belongs in [GitHub Issues](https://github.com/DanielOu1208/herdr-remote-keypad/issues). Report security problems privately through [GitHub Security Advisories](https://github.com/DanielOu1208/herdr-remote-keypad/security/advisories/new).
+Public support belongs in [GitHub Issues](https://github.com/DanielOu1208/agentslate/issues). Report security problems privately through [GitHub Security Advisories](https://github.com/DanielOu1208/agentslate/security/advisories/new).
 
 ## Project documents
 
