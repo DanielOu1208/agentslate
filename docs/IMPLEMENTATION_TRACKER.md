@@ -15,7 +15,7 @@ A task is `Done` only when its acceptance evidence is recorded here. A phase is 
 | 3. Typed and voice interaction | In progress | Send/Cancel/Edit voice flow and review editor are automated-test verified; full simulator visual and physical speech acceptance remain open |
 | 4. Pairing and lifecycle | In progress | Protocol v3 Mac and Swift foundations implemented; iPhone onboarding/Forget Bridge acceptance pending |
 | 5. Hardening | Not started | Starts after daily-use validation |
-| 6. Release staging | In progress | Open-source, Homebrew, Pages, CI, TestFlight, and production-draft materials prepared for owner review |
+| 6. Release staging | In progress | External build `0.1.0 (4)` is waiting for TestFlight review; its uncapped public link activates after approval, while production remains an unsubmitted draft |
 
 ## Phase 0: Herdr API validation
 
@@ -125,7 +125,9 @@ Exit criterion: the app is reliable enough for repeated daily supervision.
 - [x] Rewrite Git history author/committer emails and verify the personal address is absent.
 - [x] Publish the repository, Pages site, GitHub release, and Homebrew tap only after owner approval.
 - [x] Upload build `0.1.0 (3)` and enable it for the existing internal TestFlight group.
-- [ ] Upload and distribute an external TestFlight build only after owner approval.
+- [x] Upload build `0.1.0 (4)`, add it to `AgentSlate Beta`, and submit it only to TestFlight App Review after owner approval.
+- [x] Create an open-to-anyone TestFlight public link with no tester limit.
+- [ ] Confirm the public link accepts testers after Beta App Review approval.
 - [ ] Install the approved external TestFlight build on reviewers' phones.
 - [x] Keep production version `0.1.0` in Prepare for Submission; do not submit it to App Review.
 
@@ -166,6 +168,7 @@ Exit criterion: the external TestFlight build is approved and installed, public 
 | 2026-07-16 | Replace the shared token with protocol v3 device pairing | Short-lived attempt-limited codes simplify onboarding; separate revocable 256-bit credentials provide ongoing authentication |
 | 2026-07-16 | Keep pairing manual instead of adding QR setup | A six-digit code and Tailscale address cover the beta without a camera flow or another dependency |
 | 2026-07-16 | Stop the release workflow after external TestFlight | Production App Store review and release require a separate explicit owner decision after beta feedback |
+| 2026-07-16 | Use an uncapped public link for `AgentSlate Beta` | The owner requested worldwide public testing with no tester limit; Apple keeps the link closed until build `0.1.0 (4)` passes Beta App Review |
 | 2026-07-16 | Pause publication after refreshing the AgentSlate name search | Another developer recently announced an AgentSlate product in the coding-agent category, so the private release candidate stays unpublished until the owner chooses a different name or obtains independent clearance |
 | 2026-07-16 | Proceed with AgentSlate and reuse the unpublished App Store Connect record | The owner explicitly accepted the naming conflict; retaining the existing internal bundle ID avoids an unnecessary second Apple record while every visible product surface uses AgentSlate |
 
@@ -203,3 +206,4 @@ Exit criterion: the external TestFlight build is approved and installed, public 
 | 2026-07-16 | Talking and editor simulator review | Partial; manual states pending | The updated app launched on iPhone 17e, connected through the local bridge, displayed three live agents, and exposed named Voice, Edit dictation, and Cancel dictation accessibility behavior in code. Simulator microphone startup returned an audio-setup failure, so talking-overlay alignment, long transcript scrolling, Reduce Motion, keyboard layout, and failed-send retention still need interactive simulator review. |
 | 2026-07-16 | Voice gesture physical-iPhone acceptance | Pending | `devicectl` found no connected iPhone. Normal Send, Cancel sending nothing, Edit finalization, haptics, drag reach, blur/glow performance, connection loss, keyboard layout, and VoiceOver actions remain device acceptance work. |
 | 2026-07-16 | AgentSlate 0.1.0 integrated release gates | Automated pass; physical device and publication pending | `cargo fmt`, strict locked Clippy, 12 Rust tests, locked release build, 21 Swift package tests, 11 iOS simulator tests, Xcode static analysis, unsigned archive, signed App Store Connect IPA export, manifest/notices/icon inspection, clean source install, live Tailscale/Herdr doctor, and simulator onboarding/demo/settings/acknowledgements review passed. The unavailable paired iPhone prevents the physical acceptance pass. |
+| 2026-07-16 | External TestFlight submission | Waiting for Review | Verified build `0.1.0 (4)` is attached to `AgentSlate Beta` with the updated Accept/Deny test notes. The open-to-anyone public link has no tester limit and will accept testers only after Apple approves the build. Production version `0.1.0` remains in Prepare for Submission. |

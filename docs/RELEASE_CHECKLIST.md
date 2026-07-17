@@ -66,23 +66,23 @@ The owner chose to proceed with AgentSlate after reviewing the same-category nam
 
 - What to test:
 
-  > Please test onboarding and Demo Mode, session and agent selection, control labels and VoiceOver, reconnect behavior, on-device dictation, Forget Bridge, and watched-screen Accept/Deny gating for blocked agents.
+  > Please test onboarding and Demo Mode, session and agent selection, control labels and VoiceOver, reconnect behavior, on-device dictation, Forget Bridge, watched-screen Accept/Deny gating for blocked agents, and that Accept/Deny stay visually available but do nothing when no supported blocked prompt is selected.
 
 ### TestFlight steps
 
 - [x] Rename and reuse the unpublished Herdr Remote Keypad App Store Connect record and its existing bundle ID.
-- [x] Upload verified build `0.1.0 (3)`.
+- [x] Upload verified build `0.1.0 (4)` for external testing.
 - [x] Complete export compliance.
-- [ ] Complete privacy, beta description, feedback, and review fields required for external testing.
+- [x] Complete privacy, beta description, feedback, and review fields required for external testing.
 - [x] Reuse the `Internal Testers` group and enable build `0.1.0 (3)` for its one tester.
-- [ ] Create the `AgentSlate Beta` external testing group.
-- [ ] Add only the selected external testers.
-- [ ] Submit the build only to TestFlight App Review.
-- [ ] After approval, distribute to the selected external testers.
+- [x] Create the `AgentSlate Beta` external testing group.
+- [x] Create a public link open to anyone with no tester limit.
+- [x] Submit build `0.1.0 (4)` only to TestFlight App Review.
+- [ ] After approval, confirm the public link accepts external testers.
 - [ ] Confirm a reviewer can install the approved external TestFlight build.
 - [ ] Stop for owner review.
 
-The first external build requires TestFlight App Review. Do not use Xcode's TestFlight Internal Only upload option for the external build.
+Build `0.1.0 (4)` entered `Waiting for Review` on July 16, 2026. The public link is `https://testflight.apple.com/join/T1bCGkH6`; Apple will not allow testers to join until the group has an approved build. Do not use Xcode's TestFlight Internal Only upload option for the external build.
 
 ## Production App Store metadata
 
