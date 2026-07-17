@@ -1,4 +1,4 @@
-# Herdr Remote Keypad Implementation Tracker
+# AgentSlate Implementation Tracker
 
 Last updated: 2026-07-16
 Allowed states: `Not started`, `In progress`, `Blocked`, `Done`
@@ -13,8 +13,9 @@ A task is `Done` only when its acceptance evidence is recorded here. A phase is 
 | 1. Rust connector vertical slice | Done | Local and Tailscale acceptance checks passed |
 | 2. SwiftUI dashboard and keypad | In progress | SwiftUI dashboard and keypad simulator-verified; physical iPhone acceptance pending |
 | 3. Typed and voice interaction | In progress | Send/Cancel/Edit voice flow and review editor are automated-test verified; full simulator visual and physical speech acceptance remain open |
-| 4. Pairing and lifecycle | Not started | Starts before wider beta |
+| 4. Pairing and lifecycle | In progress | Protocol v3 Mac and Swift foundations implemented; iPhone onboarding/Forget Bridge acceptance pending |
 | 5. Hardening | Not started | Starts after daily-use validation |
+| 6. Release staging | In progress | Open-source, Homebrew, Pages, CI, TestFlight, and production-draft materials prepared for owner review |
 
 ## Phase 0: Herdr API validation
 
@@ -34,6 +35,7 @@ Exit criterion: a disposable agent prompt is controlled without sending keys thr
 - [x] Separate connector, iPhone vertical slice, and complete MVP acceptance criteria.
 - [x] Revise protocol v1 to the keypad-only contract before a client release.
 - [x] Replace protocol v1 with the session-aware protocol v2 contract.
+- [x] Replace the shared-token protocol with device-paired protocol v3 before public beta.
 - [x] Run a final document consistency review after implementation.
 
 ### Bridge
@@ -65,8 +67,8 @@ Exit criterion: the authenticated probe lists current agents and safely operates
 ## Phase 2: SwiftUI dashboard and keypad
 
 - [x] Create the native SwiftUI project on the Xcode-equipped MacBook.
-- [x] Implement protocol v2 models and `Network.framework` connection as an iOS 18+ Swift package.
-- [x] Add manual host/token configuration and Keychain storage.
+- [x] Implement protocol v3 models and `Network.framework` connection as an iOS 18+ Swift package.
+- [x] Implement the original manual host/token configuration; superseded by Phase 4 device pairing before beta.
 - [x] Add connection state and bounded automatic reconnect to the Swift package.
 - [x] Add a branded four-column, 12-slot agent grid with compact working-folder labels, confirmed Herdr pane focus, and clear selected-agent identity.
 - [x] Add a native header menu that remembers and safely falls back between running Herdr sessions.
@@ -90,11 +92,16 @@ Exit criterion: typed and spoken instructions reach the selected agent without s
 
 ## Phase 4: Pairing and lifecycle
 
-- [ ] Replace the shared token with one-time pairing and per-device credentials.
-- [ ] Store iPhone credentials in Keychain and support revocation.
-- [ ] Add QR configuration and authentication throttling.
-- [ ] Add launchd management for the persistent bridge.
-- [ ] Re-evaluate a Herdr plugin only for pair/status/restart/revoke controls.
+- [x] Replace the shared token with a six-digit, single-use pairing code that expires after ten minutes and locks after five failures.
+- [x] Generate a separate random 32-byte credential and server-controlled ID for each paired device.
+- [x] Store only the credential digest in owner-only Mac state and recheck authorization before every command.
+- [x] Add `pair`, `devices list`, `devices revoke`, and self-revocation routes.
+- [x] Add protocol v3 pairing/authentication/revocation models to `AgentSlateClient`.
+- [x] Store the iPhone device ID and credential in Keychain.
+- [x] Replace token onboarding with Mac address plus pairing code.
+- [ ] Verify Forget Bridge revokes itself while connected and gives manual-revocation instructions while offline.
+- [ ] Verify Setup, Support, Privacy, Acknowledgements, version/build, and offline Demo Mode on a physical iPhone.
+- [x] Use the Homebrew service as the persistent bridge manager; do not add a separate launchd layer.
 
 Exit criterion: an unpaired device cannot read state or send input, and setup no longer requires copying configuration manually.
 
@@ -105,6 +112,22 @@ Exit criterion: an unpaired device cannot read state or send input, and setup no
 - [ ] Add redacted diagnostics, onboarding, TestFlight, and troubleshooting.
 
 Exit criterion: the app is reliable enough for repeated daily supervision.
+
+## Phase 6: Release staging
+
+- [x] Add the MIT license, contributor/security policies, third-party notices, and release-ready README.
+- [x] Add GitHub Pages landing, privacy, and support pages.
+- [x] Add one CI workflow for Rust, Swift package, iOS simulator, and unsigned archive checks.
+- [x] Prepare the Homebrew source formula with a release-checksum placeholder.
+- [x] Prepare TestFlight metadata, production metadata, and screenshot requirements.
+- [ ] Complete formal trademark clearance and confirm App Store name availability.
+- [ ] Rewrite Git history author/committer emails and verify the personal address is absent.
+- [ ] Publish the repository, Pages site, GitHub release, and Homebrew tap only after owner approval.
+- [ ] Upload and distribute an external TestFlight build only after owner approval.
+- [ ] Install the approved external TestFlight build on reviewers' phones.
+- [ ] Keep the production version in Prepare for Submission; do not submit it to App Review.
+
+Exit criterion: the external TestFlight build is approved and installed, public source/Homebrew artifacts are available, and the production App Store version remains an unsubmitted draft.
 
 ## Decision log
 
@@ -128,7 +151,7 @@ Exit criterion: the app is reliable enough for repeated daily supervision.
 | 2026-07-15 | Target the iPhone app at iOS 26+ for SpeechAnalyzer; keep the Swift package at iOS 18 | Speech stays in the app target; the shared bridge client does not need the newer OS floor |
 | 2026-07-15 | Default voice UX to hold, speak, release, then send text plus Enter | Keeps the fastest path as the default outcome |
 | 2026-07-16 | Prepare voice after saved bridge setup is available | Existing users prewarm on app launch; new users complete setup first, then incur permission and model preparation once |
-| 2026-07-16 | Use only the native asynchronous microphone permission API | Removes the legacy speech-authorizer actor-isolation crash; SpeechAnalyzer performs recognition on-device without a separate speech permission |
+| 2026-07-16 | Use the native asynchronous microphone permission API with SpeechAnalyzer | Removes the legacy speech-authorizer actor-isolation crash; SpeechAnalyzer performs recognition on-device, while the app still includes Apple's required speech-usage explanation |
 | 2026-07-16 | Use a record-only measurement audio session without ducking other audio | Dictation owns only the microphone path it needs, does not lower other apps' audio, and deactivates capture on cleanup |
 | 2026-07-16 | Add visible Cancel/Edit release targets and a target-bound review sheet | Normal release stays fast; alternate outcomes remain explicit and cannot redirect a captured draft to another agent |
 | 2026-07-16 | Make VoiceOver dictation a start/send toggle with named Edit and Cancel actions | Hold gestures are not reliable under VoiceOver, while alternate actions preserve all three release outcomes |
@@ -137,6 +160,10 @@ Exit criterion: the app is reliable enough for repeated daily supervision.
 | 2026-07-16 | Replace protocol v1 with session-aware protocol v2 | Requiring the session on every request prevents colliding pane IDs from routing to the wrong Herdr server |
 | 2026-07-16 | Keep session selection phone-local | The header menu changes the remote target without attaching, switching, or foregrounding anything on the Mac |
 | 2026-07-16 | Discover sessions normally and reserve `--herdr-socket` for fixed mode | Herdr injects its current socket into pane environments, so implicitly honoring that variable would disable multi-session discovery |
+| 2026-07-16 | Rename the public product and packages to AgentSlate | Gives the open-source beta a concise product identity while keeping Herdr named only as the backend |
+| 2026-07-16 | Replace the shared token with protocol v3 device pairing | Short-lived attempt-limited codes simplify onboarding; separate revocable 256-bit credentials provide ongoing authentication |
+| 2026-07-16 | Keep pairing manual instead of adding QR setup | A six-digit code and Tailscale address cover the beta without a camera flow or another dependency |
+| 2026-07-16 | Stop the release workflow after external TestFlight | Production App Store review and release require a separate explicit owner decision after beta feedback |
 
 ## Verification evidence
 
@@ -171,3 +198,4 @@ Exit criterion: the app is reliable enough for repeated daily supervision.
 | 2026-07-16 | Voice Send/Cancel/Edit automation | Pass | Xcode 26.6 built the app and all 10 iPhone 17e simulator tests passed. New coverage checks displayed target centers and edges, release outside targets, moving into and out of targets, newline normalization, blank/control-character rejection, exact emoji byte limits, and original-target gating. |
 | 2026-07-16 | Talking and editor simulator review | Partial; manual states pending | The updated app launched on iPhone 17e, connected through the local bridge, displayed three live agents, and exposed named Voice, Edit dictation, and Cancel dictation accessibility behavior in code. Simulator microphone startup returned an audio-setup failure, so talking-overlay alignment, long transcript scrolling, Reduce Motion, keyboard layout, and failed-send retention still need interactive simulator review. |
 | 2026-07-16 | Voice gesture physical-iPhone acceptance | Pending | `devicectl` found no connected iPhone. Normal Send, Cancel sending nothing, Edit finalization, haptics, drag reach, blur/glow performance, connection loss, keyboard layout, and VoiceOver actions remain device acceptance work. |
+| 2026-07-16 | AgentSlate 0.1.0 integrated release gates | Automated pass; physical device and publication pending | `cargo fmt`, strict locked Clippy, 12 Rust tests, locked release build, 21 Swift package tests, 11 iOS simulator tests, Xcode static analysis, unsigned archive, signed App Store Connect IPA export, manifest/notices/icon inspection, clean source install, live Tailscale/Herdr doctor, and simulator onboarding/demo/settings/acknowledgements review passed. The unavailable paired iPhone prevents the physical acceptance pass. |

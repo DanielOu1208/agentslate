@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@testable import HerdrRemoteClient
+@testable import AgentSlateClient
 
 @Test func agentFixturesAndUnknownStatus() throws {
   let data = Data(
@@ -25,12 +25,12 @@ import Testing
     WireRequest(
       id: "1", payload: .sendKey(session: "team", agentID: "w1:p1", key: .shiftTab)))
   let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
-  #expect(object["version"] as? Int == 2)
+  #expect(object["version"] as? Int == 3)
   #expect(object["type"] as? String == "send_key")
   #expect(object["session"] as? String == "team")
   #expect(object["agent_id"] as? String == "w1:p1")
   #expect(object["key"] as? String == "shift_tab")
-  #expect(object["token"] == nil)
+  #expect(object["credential"] == nil)
   #expect(object["text"] == nil)
 }
 
@@ -39,7 +39,7 @@ import Testing
     WireRequest(
       id: "2", payload: .sendAction(session: "default", agentID: "w1:p1", action: .deny)))
   let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
-  #expect(object["version"] as? Int == 2)
+  #expect(object["version"] as? Int == 3)
   #expect(object["type"] as? String == "send_action")
   #expect(object["agent_id"] as? String == "w1:p1")
   #expect(object["session"] as? String == "default")
@@ -49,10 +49,47 @@ import Testing
 }
 
 @Test func typedWireMessageRejectsIncompleteSnapshots() {
-  let data = Data(#"{"version":2,"type":"agent_snapshot","event_id":1}"#.utf8)
+  let data = Data(#"{"version":3,"type":"agent_snapshot","event_id":1}"#.utf8)
   #expect(throws: (any Error).self) {
     try JSONDecoder().decode(WireMessage.self, from: data)
   }
+}
+
+@Test func pairingAndAuthenticationEncodeOnlyCredentialsTheyNeed() throws {
+  let pairData = try JSONEncoder().encode(
+    WireRequest(id: "pair", payload: .pair(code: "123456", deviceName: "Test iPhone")))
+  let pair = try #require(JSONSerialization.jsonObject(with: pairData) as? [String: Any])
+  #expect(pair["version"] as? Int == 3)
+  #expect(pair["type"] as? String == "pair")
+  #expect(pair["code"] as? String == "123456")
+  #expect(pair["device_name"] as? String == "Test iPhone")
+  #expect(pair["credential"] == nil)
+
+  let credential = BridgeCredential(
+    deviceID: String(repeating: "b", count: 32),
+    credential: String(repeating: "a", count: 64)
+  )
+  let authData = try JSONEncoder().encode(
+    WireRequest(id: "auth", payload: .authenticate(credential)))
+  let auth = try #require(JSONSerialization.jsonObject(with: authData) as? [String: Any])
+  #expect(auth["type"] as? String == "authenticate")
+  #expect(auth["device_id"] as? String == credential.deviceID)
+  #expect(auth["credential"] as? String == credential.credential)
+  #expect(auth["code"] == nil)
+}
+
+@Test func pairedMessageDecodesCredential() throws {
+  let data = Data(
+    #"{"version":3,"id":"pair","type":"paired","device_id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","credential":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#
+      .utf8
+  )
+  let message = try JSONDecoder().decode(WireMessage.self, from: data)
+  guard case .paired("pair", let credential) = message else {
+    Issue.record("paired response did not decode")
+    return
+  }
+  #expect(credential.deviceID == String(repeating: "b", count: 32))
+  #expect(credential.credential == String(repeating: "a", count: 64))
 }
 
 @Test func reconnectDelayIsCappedAtFiveSeconds() {

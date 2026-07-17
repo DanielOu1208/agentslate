@@ -1,0 +1,32 @@
+# Rust dependency licenses
+
+Generated from `Cargo.lock` with `cargo-about`. Regenerate with:
+
+```sh
+cargo about generate --locked --output-file docs/rust-dependency-licenses.md packaging/rust-licenses.hbs
+```
+
+## Components
+
+| Crate | Version | License |
+|---|---:|---|
+{{#each crates}}
+| [{{package.name}}]({{#if package.repository}}{{package.repository}}{{else}}https://crates.io/crates/{{package.name}}{{/if}}) | {{package.version}} | {{license}} |
+{{/each}}
+
+## License texts
+
+{{#each licenses}}
+### {{name}}
+
+Used by:
+{{#each used_by}}
+
+- [{{crate.name}} {{crate.version}}]({{#if crate.repository}}{{crate.repository}}{{else}}https://crates.io/crates/{{crate.name}}{{/if}})
+{{/each}}
+
+```text
+{{{text}}}
+```
+
+{{/each}}

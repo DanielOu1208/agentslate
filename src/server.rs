@@ -1,12 +1,12 @@
+use crate::devices::DeviceStore;
 use crate::herdr::{HerdrClient, HerdrError, HerdrSession, Snapshot, discover_sessions};
 use crate::protocol::{
     Agent, ClientMessage, MAX_CLIENT_LINE_BYTES, MAX_REQUEST_ID_BYTES, PROTOCOL_VERSION, Session,
     herdr_key, read_frame, remote_action_keys, validate_text,
 };
-use crate::token;
 use serde_json::{Value, json};
 use std::collections::HashMap;
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Arc;
@@ -15,19 +15,26 @@ use std::time::Duration;
 use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::{Mutex, Notify, RwLock, mpsc};
 use tokio::time::{Instant, sleep, timeout};
 
 pub struct ServerConfig {
     pub listen: Option<SocketAddr>,
     pub herdr_socket: Option<PathBuf>,
-    pub token_file: PathBuf,
+    pub state_dir: PathBuf,
 }
 
 #[derive(Clone)]
 enum SessionSource {
     Discover,
     Fixed(Vec<HerdrSession>),
+}
+
+struct MonitorAuthorization {
+    devices: Arc<Mutex<DeviceStore>>,
+    device_id: String,
+    credential: String,
+    revocation: Arc<Notify>,
 }
 
 impl SessionSource {
@@ -40,12 +47,17 @@ impl SessionSource {
 }
 
 pub fn discover_tailscale_address(port: u16) -> Result<SocketAddr, String> {
-    let output = Command::new("tailscale")
+    let executable = resolve_tailscale_command()?;
+    let output = Command::new(&executable)
         .args(["ip", "-4"])
+        .env("TAILSCALE_BE_CLI", "1")
         .output()
-        .map_err(|error| format!("cannot run 'tailscale ip -4': {error}"))?;
+        .map_err(|error| format!("cannot run '{} ip -4': {error}", executable.display()))?;
     if !output.status.success() {
-        return Err("Tailscale is unavailable; pass --listen for a local-only test".into());
+        return Err(format!(
+            "Tailscale is unavailable: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
     }
     let address = String::from_utf8(output.stdout)
         .map_err(|error| error.to_string())?
@@ -57,12 +69,63 @@ pub fn discover_tailscale_address(port: u16) -> Result<SocketAddr, String> {
     Ok(SocketAddr::new(address, port))
 }
 
+pub fn resolve_tailscale_command() -> Result<PathBuf, String> {
+    if let Some(path) = std::env::var_os("PATH") {
+        if let Some(executable) = std::env::split_paths(&path)
+            .map(|directory| directory.join("tailscale"))
+            .find(|candidate| candidate.is_file())
+        {
+            return Ok(executable);
+        }
+    }
+    [
+        "/usr/local/bin/tailscale",
+        "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+    ]
+    .into_iter()
+    .map(PathBuf::from)
+    .find(|candidate| candidate.is_file())
+    .ok_or_else(|| {
+        "Tailscale CLI not found in PATH, /usr/local/bin, or the macOS app bundle".into()
+    })
+}
+
+pub fn validate_listen_address(address: SocketAddr) -> Result<(), String> {
+    if is_allowed_listen_ip(address.ip()) {
+        Ok(())
+    } else {
+        Err(format!(
+            "refusing to listen on {}; use loopback or a Tailscale address",
+            address.ip()
+        ))
+    }
+}
+
+fn is_allowed_listen_ip(address: IpAddr) -> bool {
+    match address {
+        IpAddr::V4(address) => address.is_loopback() || is_tailscale_ipv4(address),
+        IpAddr::V6(address) => address.is_loopback() || is_tailscale_ipv6(address),
+    }
+}
+
+fn is_tailscale_ipv4(address: Ipv4Addr) -> bool {
+    let [first, second, ..] = address.octets();
+    first == 100 && (64..=127).contains(&second)
+}
+
+fn is_tailscale_ipv6(address: Ipv6Addr) -> bool {
+    let segments = address.segments();
+    segments[0..3] == [0xfd7a, 0x115c, 0xa1e0]
+}
+
 pub async fn run(config: ServerConfig) -> Result<(), String> {
     let listen = config
         .listen
         .map(Ok)
         .unwrap_or_else(|| discover_tailscale_address(8765))?;
-    let expected_token = Arc::new(token::read(&config.token_file)?);
+    validate_listen_address(listen)?;
+    let devices = Arc::new(Mutex::new(DeviceStore::new(config.state_dir)));
+    devices.lock().await.initialize()?;
     let source = Arc::new(match config.herdr_socket {
         Some(socket) => SessionSource::Fixed(vec![HerdrSession::new("custom", true, socket)]),
         None => {
@@ -73,7 +136,7 @@ pub async fn run(config: ServerConfig) -> Result<(), String> {
     let listener = TcpListener::bind(listen)
         .await
         .map_err(|error| format!("cannot listen on {listen}: {error}"))?;
-    println!("Herdr Remote Keypad listening on {listen}");
+    println!("AgentSlate listening on {listen}");
     match source.as_ref() {
         SessionSource::Discover => println!("Herdr sessions: automatic discovery"),
         SessionSource::Fixed(sessions) => {
@@ -86,16 +149,16 @@ pub async fn run(config: ServerConfig) -> Result<(), String> {
             accepted = listener.accept() => {
                 let (stream, peer) = accepted.map_err(|error| error.to_string())?;
                 let source = Arc::clone(&source);
-                let expected_token = Arc::clone(&expected_token);
+                let devices = Arc::clone(&devices);
                 tokio::spawn(async move {
-                    if let Err(error) = handle_connection(stream, source, expected_token).await {
+                    if let Err(error) = handle_connection(stream, source, devices).await {
                         eprintln!("connection {peer} closed: {error}");
                     }
                 });
             }
             signal = tokio::signal::ctrl_c() => {
                 signal.map_err(|error| error.to_string())?;
-                println!("Bridge stopped");
+                println!("AgentSlate stopped");
                 return Ok(());
             }
         }
@@ -105,7 +168,7 @@ pub async fn run(config: ServerConfig) -> Result<(), String> {
 async fn handle_connection(
     stream: TcpStream,
     source: Arc<SessionSource>,
-    expected_token: Arc<String>,
+    devices: Arc<Mutex<DeviceStore>>,
 ) -> Result<(), String> {
     let (read_half, mut write_half) = stream.into_split();
     let mut reader = BufReader::new(read_half);
@@ -120,30 +183,62 @@ async fn handle_connection(
     let message: ClientMessage = serde_json::from_str(&first)
         .map_err(|_| "first message was not valid protocol JSON".to_owned())?;
 
-    let (id, supplied_token) = match message {
-        ClientMessage::Authenticate {
-            version,
+    if let Err(code) = message.validate_envelope() {
+        let id = if message.id().is_empty() || message.id().len() > MAX_REQUEST_ID_BYTES {
+            "unknown"
+        } else {
+            message.id()
+        };
+        let detail = if code == "unsupported_version" {
+            "unsupported protocol version"
+        } else {
+            "invalid request envelope"
+        };
+        write_direct(&mut write_half, error_response(id, code, detail)).await?;
+        return Err("first message used an invalid envelope".into());
+    }
+
+    let (id, device_id, credential) = match message {
+        ClientMessage::Pair {
             id,
-            token: supplied_token,
+            code,
+            device_name,
+            ..
         } => {
-            if version != PROTOCOL_VERSION {
-                write_direct(
-                    &mut write_half,
-                    error_response(&id, "unsupported_version", "unsupported protocol version"),
-                )
-                .await?;
-                return Err("authentication used an invalid envelope".into());
+            let paired = devices.lock().await.pair(&code, &device_name);
+            match paired {
+                Ok(paired) => {
+                    write_direct(
+                        &mut write_half,
+                        response(
+                            &id,
+                            "paired",
+                            json!({
+                                "device_id": paired.device_id,
+                                "credential": paired.credential
+                            }),
+                        ),
+                    )
+                    .await?;
+                    return Ok(());
+                }
+                Err(_) => {
+                    sleep(Duration::from_millis(250)).await;
+                    write_direct(
+                        &mut write_half,
+                        error_response(&id, "pairing_failed", "pairing failed"),
+                    )
+                    .await?;
+                    return Err("pairing failed".into());
+                }
             }
-            if id.is_empty() || id.len() > MAX_REQUEST_ID_BYTES {
-                write_direct(
-                    &mut write_half,
-                    error_response("unknown", "invalid_message", "invalid request envelope"),
-                )
-                .await?;
-                return Err("authentication used an invalid request id".into());
-            }
-            (id, supplied_token)
         }
+        ClientMessage::Authenticate {
+            id,
+            device_id,
+            credential,
+            ..
+        } => (id, device_id, credential),
         _ => {
             write_direct(
                 &mut write_half,
@@ -154,7 +249,7 @@ async fn handle_connection(
         }
     };
 
-    if !token::constant_time_eq(expected_token.as_bytes(), supplied_token.as_bytes()) {
+    if !devices.lock().await.authenticate(&device_id, &credential) {
         sleep(Duration::from_millis(250)).await;
         write_direct(
             &mut write_half,
@@ -169,17 +264,42 @@ async fn handle_connection(
     let (outgoing, receiver) = mpsc::channel::<Value>(64);
     let writer = tokio::spawn(writer_loop(write_half, receiver));
     let events = Arc::new(AtomicU64::new(1));
+    let revocation = Arc::new(Notify::new());
+    let monitor_authorization = MonitorAuthorization {
+        devices: Arc::clone(&devices),
+        device_id: device_id.clone(),
+        credential: credential.clone(),
+        revocation: Arc::clone(&revocation),
+    };
     let status_monitor = tokio::spawn(monitor_sessions(
         source,
         Arc::clone(&sessions),
         outgoing.clone(),
         Arc::clone(&events),
+        monitor_authorization,
     ));
 
-    while let Some(line) = read_frame(&mut reader, MAX_CLIENT_LINE_BYTES)
-        .await
-        .map_err(|error| error.to_string())?
-    {
+    loop {
+        let line = tokio::select! {
+            line = read_frame(&mut reader, MAX_CLIENT_LINE_BYTES) => {
+                match line.map_err(|error| error.to_string())? {
+                    Some(line) => line,
+                    None => break,
+                }
+            }
+            _ = revocation.notified() => {
+                send(
+                    &outgoing,
+                    error_response(
+                        "revocation",
+                        "authentication_failed",
+                        "device is no longer authorized",
+                    ),
+                )
+                .await?;
+                break;
+            }
+        };
         let message: ClientMessage = match serde_json::from_str(&line) {
             Ok(message) => message,
             Err(_) => {
@@ -201,8 +321,21 @@ async fn handle_connection(
             continue;
         }
 
+        if !devices.lock().await.authenticate(&device_id, &credential) {
+            send(
+                &outgoing,
+                error_response(
+                    message.id(),
+                    "authentication_failed",
+                    "device is no longer authorized",
+                ),
+            )
+            .await?;
+            break;
+        }
+
         match message {
-            ClientMessage::Authenticate { id, .. } => {
+            ClientMessage::Pair { id, .. } | ClientMessage::Authenticate { id, .. } => {
                 send(
                     &outgoing,
                     error_response(&id, "invalid_message", "already authenticated"),
@@ -366,6 +499,11 @@ async fn handle_connection(
             ClientMessage::Ping { id, .. } => {
                 send(&outgoing, response(&id, "pong", json!({}))).await?;
             }
+            ClientMessage::RevokeSelf { id, .. } => {
+                devices.lock().await.revoke(&device_id)?;
+                send(&outgoing, response(&id, "revoked", json!({}))).await?;
+                break;
+            }
         }
     }
 
@@ -408,6 +546,7 @@ async fn monitor_sessions(
     sessions: Arc<RwLock<Vec<HerdrSession>>>,
     outgoing: mpsc::Sender<Value>,
     events: Arc<AtomicU64>,
+    authorization: MonitorAuthorization,
 ) {
     let mut previous_sessions = None;
     let mut connected = HashMap::<String, bool>::new();
@@ -415,6 +554,16 @@ async fn monitor_sessions(
     let mut next_discovery = Instant::now();
 
     loop {
+        if !authorization
+            .devices
+            .lock()
+            .await
+            .authenticate(&authorization.device_id, &authorization.credential)
+        {
+            authorization.revocation.notify_one();
+            return;
+        }
+
         if Instant::now() >= next_discovery {
             match source.sessions() {
                 Ok(discovered) => *sessions.write().await = discovered,
@@ -603,8 +752,8 @@ async fn send_herdr_error(
             "herdr_unavailable".into(),
             "Herdr is currently unavailable".into(),
         ),
-        other => {
-            eprintln!("Herdr request failed: {other}");
+        _ => {
+            eprintln!("Herdr request failed; details withheld");
             ("internal_error".into(), "Herdr request failed".into())
         }
     };
@@ -741,10 +890,33 @@ mod tests {
         assert_eq!(response["detail"], "ok");
     }
 
+    #[test]
+    fn listener_accepts_only_loopback_and_tailscale_ranges() {
+        for address in [
+            "127.0.0.1:8765",
+            "[::1]:8765",
+            "100.64.0.1:8765",
+            "100.127.255.254:8765",
+            "[fd7a:115c:a1e0::1]:8765",
+        ] {
+            assert!(validate_listen_address(address.parse().unwrap()).is_ok());
+        }
+        for address in [
+            "0.0.0.0:8765",
+            "[::]:8765",
+            "192.168.1.2:8765",
+            "100.128.0.1:8765",
+            "8.8.8.8:8765",
+            "[fd7a:115c:a1e1::1]:8765",
+        ] {
+            assert!(validate_listen_address(address.parse().unwrap()).is_err());
+        }
+    }
+
     #[tokio::test]
     async fn routes_authenticated_keypad_requests_end_to_end() {
         let socket = std::env::temp_dir().join(format!(
-            "herdr-remote-keypad-server-test-{}-{}.sock",
+            "agentslate-server-test-{}-{}.sock",
             std::process::id(),
             TEST_ID.fetch_add(1, Ordering::Relaxed)
         ));
@@ -753,7 +925,7 @@ mod tests {
         let fake_herdr = tokio::spawn(run_fake_herdr(herdr_listener, Arc::clone(&herdr_requests)));
 
         let second_socket = std::env::temp_dir().join(format!(
-            "herdr-remote-keypad-server-test-{}-{}.sock",
+            "agentslate-server-test-{}-{}.sock",
             std::process::id(),
             TEST_ID.fetch_add(1, Ordering::Relaxed)
         ));
@@ -766,7 +938,14 @@ mod tests {
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
-        let expected_token = Arc::new("a".repeat(64));
+        let state_dir = std::env::temp_dir().join(format!(
+            "agentslate-server-device-test-{}-{}",
+            std::process::id(),
+            TEST_ID.fetch_add(1, Ordering::Relaxed)
+        ));
+        let store = DeviceStore::new(state_dir.clone());
+        let pairing_code = store.create_pairing().unwrap();
+        let devices = Arc::new(Mutex::new(store));
         let source = Arc::new(SessionSource::Fixed(vec![
             HerdrSession::new("default", true, socket.clone()),
             HerdrSession::new("team", false, second_socket.clone()),
@@ -775,12 +954,31 @@ mod tests {
             loop {
                 let (stream, _) = listener.accept().await.unwrap();
                 let source = Arc::clone(&source);
-                let token = Arc::clone(&expected_token);
+                let devices = Arc::clone(&devices);
                 tokio::spawn(async move {
-                    let _ = handle_connection(stream, source, token).await;
+                    let _ = handle_connection(stream, source, devices).await;
                 });
             }
         });
+
+        let pair_stream = TcpStream::connect(address).await.unwrap();
+        let (pair_read, mut pair_write) = pair_stream.into_split();
+        let mut pair_reader = BufReader::new(pair_read);
+        write_client(
+            &mut pair_write,
+            json!({
+                "version": PROTOCOL_VERSION,
+                "id": "pair",
+                "type": "pair",
+                "code": pairing_code,
+                "device_name": "Daniel's iPhone"
+            }),
+        )
+        .await;
+        let paired = read_for_id(&mut pair_reader, "pair").await;
+        assert_eq!(paired["type"], "paired");
+        let device_id = paired["device_id"].as_str().unwrap().to_owned();
+        let credential = paired["credential"].as_str().unwrap().to_owned();
 
         let old_stream = TcpStream::connect(address).await.unwrap();
         let (old_read, mut old_write) = old_stream.into_split();
@@ -791,7 +989,8 @@ mod tests {
                 "version": 1,
                 "id": "old-auth",
                 "type": "authenticate",
-                "token": "a".repeat(64)
+                "device_id": device_id,
+                "credential": credential
             }),
         )
         .await;
@@ -809,7 +1008,8 @@ mod tests {
                 "version": PROTOCOL_VERSION,
                 "id": "bad-auth",
                 "type": "authenticate",
-                "token": "b".repeat(64)
+                "device_id": device_id,
+                "credential": "b".repeat(64)
             }),
         )
         .await;
@@ -835,7 +1035,8 @@ mod tests {
                 "version": PROTOCOL_VERSION,
                 "id": "auth",
                 "type": "authenticate",
-                "token": "a".repeat(64)
+                "device_id": device_id,
+                "credential": credential
             }),
         )
         .await;
@@ -1100,6 +1301,74 @@ mod tests {
         }));
         drop(requests);
 
+        let idle_store = DeviceStore::new(state_dir.clone());
+        let idle_code = idle_store.create_pairing().unwrap();
+        let idle_device = idle_store.pair(&idle_code, "Idle phone").unwrap();
+        let idle_stream = TcpStream::connect(address).await.unwrap();
+        let (idle_read, mut idle_write) = idle_stream.into_split();
+        let mut idle_reader = BufReader::new(idle_read);
+        write_client(
+            &mut idle_write,
+            json!({
+                "version": PROTOCOL_VERSION,
+                "id": "idle-auth",
+                "type": "authenticate",
+                "device_id": idle_device.device_id,
+                "credential": idle_device.credential
+            }),
+        )
+        .await;
+        assert_eq!(
+            read_for_id(&mut idle_reader, "idle-auth").await["type"],
+            "authenticated"
+        );
+        let _ = read_for_type(&mut idle_reader, "session_snapshot").await;
+        assert!(idle_store.revoke(&idle_device.device_id).unwrap());
+        assert_eq!(
+            read_for_id(&mut idle_reader, "revocation").await["code"],
+            "authentication_failed"
+        );
+        assert!(
+            timeout(
+                Duration::from_secs(1),
+                read_frame(&mut idle_reader, MAX_CLIENT_LINE_BYTES)
+            )
+            .await
+            .unwrap()
+            .unwrap()
+            .is_none()
+        );
+
+        write_client(
+            &mut write_half,
+            json!({
+                "version": PROTOCOL_VERSION,
+                "id": "revoke",
+                "type": "revoke_self"
+            }),
+        )
+        .await;
+        assert_eq!(read_for_id(&mut reader, "revoke").await["type"], "revoked");
+
+        let revoked_stream = TcpStream::connect(address).await.unwrap();
+        let (revoked_read, mut revoked_write) = revoked_stream.into_split();
+        let mut revoked_reader = BufReader::new(revoked_read);
+        write_client(
+            &mut revoked_write,
+            json!({
+                "version": PROTOCOL_VERSION,
+                "id": "revoked-auth",
+                "type": "authenticate",
+                "device_id": device_id,
+                "credential": credential
+            }),
+        )
+        .await;
+        assert_eq!(
+            read_for_id(&mut revoked_reader, "revoked-auth").await["code"],
+            "authentication_failed"
+        );
+
         drop(write_half);
         drop(reader);
         bridge.abort();
@@ -1110,5 +1379,6 @@ mod tests {
         let _ = second_herdr.await;
         std::fs::remove_file(socket).unwrap();
         std::fs::remove_file(second_socket).unwrap();
+        std::fs::remove_dir_all(state_dir).unwrap();
     }
 }

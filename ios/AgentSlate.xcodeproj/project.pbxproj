@@ -7,13 +7,15 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		1B0000000000000000000001 /* HerdrRemoteKeypadApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000000000000000000001 /* HerdrRemoteKeypadApp.swift */; };
+		1B0000000000000000000001 /* AgentSlateApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000000000000000000001 /* AgentSlateApp.swift */; };
 		1B0000000000000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000000000000000000002 /* ContentView.swift */; };
 		1B0000000000000000000003 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000000000000000000003 /* AppModel.swift */; };
 		1B0000000000000000000004 /* AppModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000000000000000000004 /* AppModelTests.swift */; };
-		1B0000000000000000000005 /* HerdrRemoteClient in Frameworks */ = {isa = PBXBuildFile; productRef = 1F0000000000000000000001 /* HerdrRemoteClient */; };
+		1B0000000000000000000005 /* AgentSlateClient in Frameworks */ = {isa = PBXBuildFile; productRef = 1F0000000000000000000001 /* AgentSlateClient */; };
 		1B0000000000000000000006 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1A0000000000000000000007 /* Assets.xcassets */; };
 		1B0000000000000000000007 /* VoiceDictationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000000000000000000008 /* VoiceDictationController.swift */; };
+		1B0000000000000000000008 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 1A0000000000000000000009 /* PrivacyInfo.xcprivacy */; };
+		1B0000000000000000000009 /* THIRD_PARTY_NOTICES.md in Resources */ = {isa = PBXBuildFile; fileRef = 1A000000000000000000000A /* THIRD_PARTY_NOTICES.md */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -22,19 +24,21 @@
 			containerPortal = 1E0000000000000000000001 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 1D0000000000000000000001;
-			remoteInfo = HerdrRemoteKeypad;
+			remoteInfo = AgentSlate;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		1A0000000000000000000001 /* HerdrRemoteKeypadApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HerdrRemoteKeypadApp.swift; sourceTree = "<group>"; };
+		1A0000000000000000000001 /* AgentSlateApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSlateApp.swift; sourceTree = "<group>"; };
 		1A0000000000000000000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		1A0000000000000000000003 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		1A0000000000000000000004 /* AppModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModelTests.swift; sourceTree = "<group>"; };
-		1A0000000000000000000005 /* HerdrRemoteKeypad.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HerdrRemoteKeypad.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		1A0000000000000000000006 /* HerdrRemoteKeypadTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HerdrRemoteKeypadTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		1A0000000000000000000005 /* AgentSlate.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AgentSlate.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1A0000000000000000000006 /* AgentSlateTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AgentSlateTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A0000000000000000000007 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		1A0000000000000000000008 /* VoiceDictationController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceDictationController.swift; sourceTree = "<group>"; };
+		1A0000000000000000000009 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		1A000000000000000000000A /* THIRD_PARTY_NOTICES.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = ../THIRD_PARTY_NOTICES.md; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -42,7 +46,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				1B0000000000000000000005 /* HerdrRemoteClient in Frameworks */,
+				1B0000000000000000000005 /* AgentSlateClient in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -59,37 +63,39 @@
 		1C0000000000000000000020 = {
 			isa = PBXGroup;
 			children = (
-				1C0000000000000000000021 /* HerdrRemoteKeypad */,
-				1C0000000000000000000022 /* HerdrRemoteKeypadTests */,
+				1C0000000000000000000021 /* AgentSlate */,
+				1C0000000000000000000022 /* AgentSlateTests */,
 				1C0000000000000000000023 /* Products */,
 			);
 			sourceTree = "<group>";
 		};
-		1C0000000000000000000021 /* HerdrRemoteKeypad */ = {
+		1C0000000000000000000021 /* AgentSlate */ = {
 			isa = PBXGroup;
 			children = (
-				1A0000000000000000000001 /* HerdrRemoteKeypadApp.swift */,
+				1A0000000000000000000001 /* AgentSlateApp.swift */,
 				1A0000000000000000000002 /* ContentView.swift */,
 				1A0000000000000000000003 /* AppModel.swift */,
 				1A0000000000000000000008 /* VoiceDictationController.swift */,
 				1A0000000000000000000007 /* Assets.xcassets */,
+				1A0000000000000000000009 /* PrivacyInfo.xcprivacy */,
+				1A000000000000000000000A /* THIRD_PARTY_NOTICES.md */,
 			);
-			path = HerdrRemoteKeypad;
+			path = AgentSlate;
 			sourceTree = "<group>";
 		};
-		1C0000000000000000000022 /* HerdrRemoteKeypadTests */ = {
+		1C0000000000000000000022 /* AgentSlateTests */ = {
 			isa = PBXGroup;
 			children = (
 				1A0000000000000000000004 /* AppModelTests.swift */,
 			);
-			path = HerdrRemoteKeypadTests;
+			path = AgentSlateTests;
 			sourceTree = "<group>";
 		};
 		1C0000000000000000000023 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				1A0000000000000000000005 /* HerdrRemoteKeypad.app */,
-				1A0000000000000000000006 /* HerdrRemoteKeypadTests.xctest */,
+				1A0000000000000000000005 /* AgentSlate.app */,
+				1A0000000000000000000006 /* AgentSlateTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -97,9 +103,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		1D0000000000000000000001 /* HerdrRemoteKeypad */ = {
+		1D0000000000000000000001 /* AgentSlate */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 1F0000000000000000000011 /* Build configuration list for PBXNativeTarget "HerdrRemoteKeypad" */;
+			buildConfigurationList = 1F0000000000000000000011 /* Build configuration list for PBXNativeTarget "AgentSlate" */;
 			buildPhases = (
 				1C0000000000000000000031 /* Sources */,
 				1C0000000000000000000011 /* Frameworks */,
@@ -109,17 +115,17 @@
 			);
 			dependencies = (
 			);
-			name = HerdrRemoteKeypad;
+			name = AgentSlate;
 			packageProductDependencies = (
-				1F0000000000000000000001 /* HerdrRemoteClient */,
+				1F0000000000000000000001 /* AgentSlateClient */,
 			);
-			productName = HerdrRemoteKeypad;
-			productReference = 1A0000000000000000000005 /* HerdrRemoteKeypad.app */;
+			productName = AgentSlate;
+			productReference = 1A0000000000000000000005 /* AgentSlate.app */;
 			productType = "com.apple.product-type.application";
 		};
-		1D0000000000000000000002 /* HerdrRemoteKeypadTests */ = {
+		1D0000000000000000000002 /* AgentSlateTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 1F0000000000000000000012 /* Build configuration list for PBXNativeTarget "HerdrRemoteKeypadTests" */;
+			buildConfigurationList = 1F0000000000000000000012 /* Build configuration list for PBXNativeTarget "AgentSlateTests" */;
 			buildPhases = (
 				1C0000000000000000000032 /* Sources */,
 				1C0000000000000000000012 /* Frameworks */,
@@ -130,9 +136,9 @@
 			dependencies = (
 				1D0000000000000000000003 /* PBXTargetDependency */,
 			);
-			name = HerdrRemoteKeypadTests;
-			productName = HerdrRemoteKeypadTests;
-			productReference = 1A0000000000000000000006 /* HerdrRemoteKeypadTests.xctest */;
+			name = AgentSlateTests;
+			productName = AgentSlateTests;
+			productReference = 1A0000000000000000000006 /* AgentSlateTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
@@ -154,7 +160,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 1F0000000000000000000010 /* Build configuration list for PBXProject "HerdrRemoteKeypad" */;
+			buildConfigurationList = 1F0000000000000000000010 /* Build configuration list for PBXProject "AgentSlate" */;
 			compatibilityVersion = "Xcode 15.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -170,8 +176,8 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				1D0000000000000000000001 /* HerdrRemoteKeypad */,
-				1D0000000000000000000002 /* HerdrRemoteKeypadTests */,
+				1D0000000000000000000001 /* AgentSlate */,
+				1D0000000000000000000002 /* AgentSlateTests */,
 			);
 		};
 /* End PBXProject section */
@@ -182,6 +188,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				1B0000000000000000000006 /* Assets.xcassets in Resources */,
+				1B0000000000000000000008 /* PrivacyInfo.xcprivacy in Resources */,
+				1B0000000000000000000009 /* THIRD_PARTY_NOTICES.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -199,7 +207,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				1B0000000000000000000001 /* HerdrRemoteKeypadApp.swift in Sources */,
+				1B0000000000000000000001 /* AgentSlateApp.swift in Sources */,
 				1B0000000000000000000002 /* ContentView.swift in Sources */,
 				1B0000000000000000000003 /* AppModel.swift in Sources */,
 				1B0000000000000000000007 /* VoiceDictationController.swift in Sources */,
@@ -219,7 +227,7 @@
 /* Begin PBXTargetDependency section */
 		1D0000000000000000000003 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 1D0000000000000000000001 /* HerdrRemoteKeypad */;
+			target = 1D0000000000000000000001 /* AgentSlate */;
 			targetProxy = 1C0000000000000000000001 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -260,13 +268,15 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = KGR3DQJZ8C;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = Herdr;
+				INFOPLIST_KEY_CFBundleDisplayName = AgentSlate;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connects to your Herdr bridge over your private network.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Records spoken instructions that stay on this iPhone and are sent as text to your selected Herdr agent.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribes spoken instructions entirely on this iPhone before you choose whether to send the resulting text.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -275,8 +285,8 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.danielou.HerdrRemoteKeypad;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.danielou.AgentSlate;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -292,13 +302,15 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = KGR3DQJZ8C;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = Herdr;
+				INFOPLIST_KEY_CFBundleDisplayName = AgentSlate;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connects to your Herdr bridge over your private network.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Records spoken instructions that stay on this iPhone and are sent as text to your selected Herdr agent.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribes spoken instructions entirely on this iPhone before you choose whether to send the resulting text.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -307,8 +319,8 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.danielou.HerdrRemoteKeypad;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.danielou.AgentSlate;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -326,14 +338,14 @@
 				CODE_SIGN_STYLE = Automatic;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.danielou.HerdrRemoteKeypadTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.danielou.AgentSlateTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = 1;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/HerdrRemoteKeypad.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/HerdrRemoteKeypad";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/AgentSlate.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/AgentSlate";
 			};
 			name = Debug;
 		};
@@ -344,21 +356,21 @@
 				CODE_SIGN_STYLE = Automatic;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.danielou.HerdrRemoteKeypadTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.danielou.AgentSlateTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = 1;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/HerdrRemoteKeypad.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/HerdrRemoteKeypad";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/AgentSlate.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/AgentSlate";
 			};
 			name = Release;
 		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		1F0000000000000000000010 /* Build configuration list for PBXProject "HerdrRemoteKeypad" */ = {
+		1F0000000000000000000010 /* Build configuration list for PBXProject "AgentSlate" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				1F0000000000000000000020 /* Debug */,
@@ -367,7 +379,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		1F0000000000000000000011 /* Build configuration list for PBXNativeTarget "HerdrRemoteKeypad" */ = {
+		1F0000000000000000000011 /* Build configuration list for PBXNativeTarget "AgentSlate" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				1F0000000000000000000022 /* Debug */,
@@ -376,7 +388,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		1F0000000000000000000012 /* Build configuration list for PBXNativeTarget "HerdrRemoteKeypadTests" */ = {
+		1F0000000000000000000012 /* Build configuration list for PBXNativeTarget "AgentSlateTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				1F0000000000000000000024 /* Debug */,
@@ -395,10 +407,10 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		1F0000000000000000000001 /* HerdrRemoteClient */ = {
+		1F0000000000000000000001 /* AgentSlateClient */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 1F0000000000000000000002 /* XCLocalSwiftPackageReference "../swift-client" */;
-			productName = HerdrRemoteClient;
+			productName = AgentSlateClient;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

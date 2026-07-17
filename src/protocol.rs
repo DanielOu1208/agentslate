@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt};
 
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 pub const MAX_CLIENT_LINE_BYTES: usize = 65_536;
 pub const MAX_HERDR_LINE_BYTES: usize = 4 * 1024 * 1024;
 pub const MAX_REQUEST_ID_BYTES: usize = 128;
@@ -10,10 +10,17 @@ pub const MAX_TEXT_BYTES: usize = 8_192;
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMessage {
+    Pair {
+        version: u32,
+        id: String,
+        code: String,
+        device_name: String,
+    },
     Authenticate {
         version: u32,
         id: String,
-        token: String,
+        device_id: String,
+        credential: String,
     },
     RequestSnapshot {
         version: u32,
@@ -52,30 +59,38 @@ pub enum ClientMessage {
         version: u32,
         id: String,
     },
+    RevokeSelf {
+        version: u32,
+        id: String,
+    },
 }
 
 impl ClientMessage {
     pub fn version(&self) -> u32 {
         match self {
-            Self::Authenticate { version, .. }
+            Self::Pair { version, .. }
+            | Self::Authenticate { version, .. }
             | Self::RequestSnapshot { version, .. }
             | Self::FocusAgent { version, .. }
             | Self::SendKey { version, .. }
             | Self::SendText { version, .. }
             | Self::SendAction { version, .. }
-            | Self::Ping { version, .. } => *version,
+            | Self::Ping { version, .. }
+            | Self::RevokeSelf { version, .. } => *version,
         }
     }
 
     pub fn id(&self) -> &str {
         match self {
-            Self::Authenticate { id, .. }
+            Self::Pair { id, .. }
+            | Self::Authenticate { id, .. }
             | Self::RequestSnapshot { id, .. }
             | Self::FocusAgent { id, .. }
             | Self::SendKey { id, .. }
             | Self::SendText { id, .. }
             | Self::SendAction { id, .. }
-            | Self::Ping { id, .. } => id,
+            | Self::Ping { id, .. }
+            | Self::RevokeSelf { id, .. } => id,
         }
     }
 

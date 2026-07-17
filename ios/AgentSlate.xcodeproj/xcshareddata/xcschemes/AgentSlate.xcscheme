@@ -15,9 +15,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "1D0000000000000000000001"
-               BuildableName = "HerdrRemoteKeypad.app"
-               BlueprintName = "HerdrRemoteKeypad"
-               ReferencedContainer = "container:HerdrRemoteKeypad.xcodeproj">
+               BuildableName = "AgentSlate.app"
+               BlueprintName = "AgentSlate"
+               ReferencedContainer = "container:AgentSlate.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -32,9 +32,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "1D0000000000000000000002"
-               BuildableName = "HerdrRemoteKeypadTests.xctest"
-               BlueprintName = "HerdrRemoteKeypadTests"
-               ReferencedContainer = "container:HerdrRemoteKeypad.xcodeproj">
+               BuildableName = "AgentSlateTests.xctest"
+               BlueprintName = "AgentSlateTests"
+               ReferencedContainer = "container:AgentSlate.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -53,9 +53,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "1D0000000000000000000001"
-            BuildableName = "HerdrRemoteKeypad.app"
-            BlueprintName = "HerdrRemoteKeypad"
-            ReferencedContainer = "container:HerdrRemoteKeypad.xcodeproj">
+            BuildableName = "AgentSlate.app"
+            BlueprintName = "AgentSlate"
+            ReferencedContainer = "container:AgentSlate.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -69,9 +69,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "1D0000000000000000000001"
-            BuildableName = "HerdrRemoteKeypad.app"
-            BlueprintName = "HerdrRemoteKeypad"
-            ReferencedContainer = "container:HerdrRemoteKeypad.xcodeproj">
+            BuildableName = "AgentSlate.app"
+            BlueprintName = "AgentSlate"
+            ReferencedContainer = "container:AgentSlate.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

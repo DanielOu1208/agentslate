@@ -1,13 +1,13 @@
-# Herdr Remote Keypad Product Requirements
+# AgentSlate Product Requirements
 
 Status: Active draft  
-Product: Herdr Remote Keypad  
+Product: AgentSlate
 Primary client: Native SwiftUI iPhone application  
 Desktop dependency: Herdr runtime plus the connector in this repository
 
 ## Executive summary
 
-Herdr Remote Keypad is a focused iPhone companion for developers controlling terminal-based coding agents in Herdr while watching the laptop or another display. It shows which agents are working or need attention, lets the user select one, and sends the small set of keys or text needed to answer prompts without using a full remote-desktop or terminal client.
+AgentSlate is a focused iPhone companion for developers controlling terminal-based coding agents in Herdr while watching the laptop or another display. It shows which agents are working or need attention, lets the user select one, and sends the small set of keys or text needed to answer prompts without using a full remote-desktop or terminal client.
 
 The phone intentionally does not reproduce terminal output. The visible external screen provides context; the phone provides a convenient remote keyboard and agent switcher.
 
@@ -39,9 +39,9 @@ The supplied Rust command-line probe verifies this slice.
 
 ### Swift client foundation
 
-The reusable Swift package must:
+The reusable `AgentSlateClient` Swift package must:
 
-- model protocol v2 without depending on SwiftUI;
+- model protocol v3 without depending on SwiftUI;
 - authenticate and exchange newline-delimited JSON using `Network.framework`;
 - publish connection, session-list, per-session availability, and agent snapshot events;
 - focus a current agent and wait for bridge acknowledgement;
@@ -58,11 +58,12 @@ The first phone build adds:
 - watched-screen Accept and Deny shortcuts for blocked Codex, Claude Code, OMP, Cursor, and OpenCode agents;
 - hold-to-talk Voice with normal send, visible drag-to-Cancel and drag-to-Edit outcomes, plus a native review editor;
 - connection state, automatic reconnect, and disabled controls when unavailable;
-- manual bridge address and token entry with Keychain storage.
+- onboarding for the bridge address and a six-digit pairing code, with the resulting per-device credential stored in Keychain;
+- Setup, Support, Privacy, Acknowledgements, version/build, Demo Mode, and Forget Bridge screens.
 
-### Complete MVP
+### Open beta
 
-The complete MVP additionally includes editable spoken instructions and hold-to-talk local speech recognition. It is complete when an iPhone can select among at least three agents, operate approvals and pickers, review and send spoken instructions, reconnect, and reject unauthenticated input.
+The open beta additionally includes editable spoken instructions, hold-to-talk local speech recognition, secure device pairing and revocation, Homebrew service packaging, support/privacy pages, and an external TestFlight build. It is complete when an iPhone can select among at least three agents, operate approvals and pickers, review and send spoken instructions, reconnect, and reject unauthenticated or revoked devices.
 
 ## Functional requirements
 
@@ -80,7 +81,7 @@ The complete MVP additionally includes editable spoken instructions and hold-to-
 ### Input
 
 - Keep arrows, Enter, Escape, Tab, and Shift+Tab on the primary phone control bank for every current agent.
-- Continue supporting Space in protocol v2 even though the phone layout does not expose a dedicated key for it.
+- Continue supporting Space in protocol v3 even though the phone layout does not expose a dedicated key for it.
 - Support printable Unicode text with and without a final Enter.
 - Include the selected session name and agent ID in every input request.
 - Enable Accept and Deny only for a selected blocked agent whose kind has a fixed mapping, and revalidate both conditions against a fresh snapshot before forwarding it.
@@ -108,14 +109,25 @@ The complete MVP additionally includes editable spoken instructions and hold-to-
 
 - Use Tailscale for private encrypted transport; do not expose the bridge on public or general LAN interfaces by default.
 - Require application authentication before returning agent state or accepting input.
-- Do not log tokens or user input text.
-- Store the development token in an owner-only file; replace it with one-time pairing and per-device Keychain credentials before wider beta.
+- Do not log pairing codes, device credentials, or user input text.
+- Create six-digit, single-use pairing codes that expire after ten minutes and lock after five failed attempts.
+- On successful pairing, create a random 32-byte credential and server-generated device ID.
+- Store only the credential's SHA-256 digest in an owner-only Mac device file; store the device ID and credential in the iPhone Keychain.
+- Recheck device authorization before every command and state poll so revocation stops an existing connection before its next command or 200-millisecond poll.
+- Let a connected phone revoke itself before Forget Bridge clears local credentials. If offline, clear the phone and tell the user how to revoke the remaining Mac record.
 - Keep the bridge protocol narrower than the Herdr API so the phone cannot invoke arbitrary Herdr or shell commands.
+- Restrict bridge listeners to loopback and Tailscale address ranges without an insecure override.
+
+### Demo Mode
+
+- Use fixed fake sessions, agents, states, and command acknowledgements.
+- Clearly label Demo Mode throughout the app.
+- Never open a bridge connection or send input to a real Herdr session while Demo Mode is active.
 
 ## Out of scope for the first iPhone slice
 
 - terminal output, terminal emulation, or a remote-desktop view
-- QR pairing, per-device revocation, APNs, TestFlight, and Apple Watch
+- QR pairing, APNs, and Apple Watch
 - multiple Herdr machines or public-internet exposure
 - Herdr plugin packaging or launchd service management
 - structured, request-identified agent approval integrations
@@ -123,22 +135,24 @@ The complete MVP additionally includes editable spoken instructions and hold-to-
 
 ## Dependencies and risks
 
-- Herdr's local protocol is versioned independently from bridge protocol v2. The connector must tolerate unknown fields and surface incompatible required behavior clearly.
+- Herdr's local protocol is versioned independently from bridge protocol v3. The connector must tolerate unknown fields and surface incompatible required behavior clearly.
 - iOS cannot maintain a permanent socket while suspended; reliable closed-app notifications would require a later APNs design.
 - A wrong agent selection can send valid input to the wrong pane. The phone must show the selected agent clearly and the bridge must revalidate membership before every input.
-- The shared development token is acceptable for one owner on Tailscale but must be replaced before wider distribution.
+- Six-digit pairing codes are deliberately short-lived and attempt-limited; the generated 256-bit per-device credential provides ongoing authentication.
 
 ## Decisions
 
 - Rust provides the durable desktop connector.
 - Newline-delimited JSON remains the bridge wire format for easy Swift decoding and debugging.
-- The development credential is a generated shared token; QR pairing and revocation are later work.
+- Protocol v3 uses short-lived pairing codes and separate revocable device credentials; QR pairing remains unnecessary for the first beta.
 - Terminal streaming was removed before the first phone client because the user will watch the agent on another display.
 - The selected keypad target remains client state, while each agent tap focuses the matching Herdr pane before changing that selection.
 - Protocol v1 was revised in place because no released client depended on its earlier terminal-streaming draft.
-- Protocol v2 requires a session name on every targeted request; protocol v1 clients must update with the bridge.
+- Protocol v3 requires a session name on every targeted request and per-device authentication; protocol v1 and v2 clients must update with the bridge.
 - Session selection stays on the phone and does not switch or foreground a Mac window.
 - The shared Swift package targets iOS 18 and newer.
 - The iPhone app targets iOS 26 and newer so it can use SpeechAnalyzer for on-device dictation.
 - Dedicated Accept and Deny keys are watched-screen default-keymap conveniences for five supported agent kinds; they are not structured authorization and remain disabled unless the selected agent is blocked.
 - The Voice key uses on-device hold-to-talk dictation with Send, Cancel, and editable review outcomes; finalized sends reuse the existing bridge text route.
+- Demo Mode is an offline review path with fixed sample data, not a simulated connection to the real bridge.
+- Version 0.1.0 stops at external TestFlight. Production App Store metadata may be prepared, but production review and release require separate explicit approval.

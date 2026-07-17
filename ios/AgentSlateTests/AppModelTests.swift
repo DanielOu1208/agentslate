@@ -1,13 +1,14 @@
-import HerdrRemoteClient
+import AgentSlateClient
 import CoreGraphics
 import Testing
 
-@testable import HerdrRemoteKeypad
+@testable import AgentSlate
 
 @MainActor
 @Test
 func agentOrderingAndKeypadAvailability() {
-  let model = AppModel(configuredHost: "", configuredToken: "", selectedSessionName: "default")
+  let model = AppModel(
+    configuredHost: "", configuredCredential: nil, selectedSessionName: "default")
   let working = BridgeAgent(id: "working", kind: "codex", name: "Codex", status: .working)
   let blocked = BridgeAgent(id: "blocked", kind: "claude", name: "Claude", status: .blocked)
 
@@ -62,7 +63,8 @@ func agentIconAndFolderPresentation() {
 @MainActor
 @Test
 func sendAndVoiceAreGatedUntilAgentSelected() async {
-  let model = AppModel(configuredHost: "", configuredToken: "", selectedSessionName: "default")
+  let model = AppModel(
+    configuredHost: "", configuredCredential: nil, selectedSessionName: "default")
   model.apply(.sessions([BridgeSession(name: "default", isDefault: true)]))
   model.apply(.connectionState(.connected))
   model.apply(.herdrAvailability(session: "default", state: .connected))
@@ -85,7 +87,8 @@ func sendAndVoiceAreGatedUntilAgentSelected() async {
 @MainActor
 @Test
 func sessionSelectionRestoresAndFallsBackWithoutMacAction() {
-  let model = AppModel(configuredHost: "", configuredToken: "", selectedSessionName: "team")
+  let model = AppModel(
+    configuredHost: "", configuredCredential: nil, selectedSessionName: "team")
   let defaultSession = BridgeSession(name: "default", isDefault: true)
   let teamSession = BridgeSession(name: "team")
   let defaultAgent = BridgeAgent(
@@ -187,4 +190,25 @@ func voiceDraftOnlyMatchesItsOriginalSelectedTarget() {
   #expect(!draft.matches(agentID: "agent-2", session: "default", available: true))
   #expect(!draft.matches(agentID: "agent-1", session: "other", available: true))
   #expect(!draft.matches(agentID: "agent-1", session: "default", available: false))
+}
+
+@MainActor
+@Test
+func offlineDemoUsesFixedLocalStateAndAcknowledgesCommands() async {
+  let model = AppModel(configuredHost: "", configuredCredential: nil)
+  await model.activateDemoMode()
+
+  #expect(model.isDemoMode)
+  #expect(model.connectionLabel == "Demo Mode, offline")
+  #expect(model.sessions.map(\.name) == ["Offline Demo"])
+  #expect(model.agents.count == 5)
+  #expect(!model.canSend)
+
+  let agent = try! #require(model.agents.first)
+  await model.select(agent)
+  #expect(model.canSend)
+  await model.send(.enter)
+  #expect(model.successFeedback == 1)
+  #expect(await model.send(text: "demo prompt"))
+  #expect(model.successFeedback == 2)
 }

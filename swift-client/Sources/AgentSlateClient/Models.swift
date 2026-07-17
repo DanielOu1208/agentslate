@@ -120,7 +120,8 @@ public enum BridgeEvent: Equatable, Sendable {
 
 public enum BridgeError: Error, Equatable, Sendable {
   case invalidAddress
-  case invalidToken
+  case invalidPairingCode
+  case invalidCredential
   case invalidText
   case notConnected
   case requestTimedOut
@@ -134,7 +135,8 @@ extension BridgeError: LocalizedError {
   public var errorDescription: String? {
     switch self {
     case .invalidAddress: "The bridge address is invalid."
-    case .invalidToken: "The token must be 64 lowercase hexadecimal characters."
+    case .invalidPairingCode: "The pairing code must be six digits."
+    case .invalidCredential: "The saved bridge credential is invalid."
     case .invalidText: "Text is too large or contains control characters."
     case .notConnected: "The bridge is not connected."
     case .requestTimedOut: "The bridge did not respond in time."
@@ -146,23 +148,42 @@ extension BridgeError: LocalizedError {
   }
 }
 
+public struct BridgeCredential: Codable, Equatable, Sendable {
+  public let deviceID: String
+  public let credential: String
+
+  public init(deviceID: String, credential: String) {
+    self.deviceID = deviceID
+    self.credential = credential
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case credential
+    case deviceID = "device_id"
+  }
+}
+
 enum WireRequestPayload: Sendable {
-  case authenticate(token: String)
+  case pair(code: String, deviceName: String)
+  case authenticate(BridgeCredential)
   case requestSnapshot(session: String)
   case focusAgent(session: String, agentID: String)
   case sendKey(session: String, agentID: String, key: RemoteKey)
   case sendAction(session: String, agentID: String, action: RemoteAction)
   case sendText(session: String, agentID: String, text: String, submit: Bool)
+  case revokeSelf
   case ping
 }
 
 struct WireRequest: Encodable, Sendable {
-  let version = 2
+  let version = 3
   let id: String
   let payload: WireRequestPayload
 
   enum CodingKeys: String, CodingKey {
-    case version, id, type, token, session, key, action, text, submit
+    case version, id, type, code, credential, session, key, action, text, submit
+    case deviceName = "device_name"
+    case deviceID = "device_id"
     case agentID = "agent_id"
   }
 
@@ -172,9 +193,14 @@ struct WireRequest: Encodable, Sendable {
     try container.encode(id, forKey: .id)
 
     switch payload {
-    case .authenticate(let token):
+    case .pair(let code, let deviceName):
+      try container.encode("pair", forKey: .type)
+      try container.encode(code, forKey: .code)
+      try container.encode(deviceName, forKey: .deviceName)
+    case .authenticate(let bridgeCredential):
       try container.encode("authenticate", forKey: .type)
-      try container.encode(token, forKey: .token)
+      try container.encode(bridgeCredential.deviceID, forKey: .deviceID)
+      try container.encode(bridgeCredential.credential, forKey: .credential)
     case .requestSnapshot(let session):
       try container.encode("request_snapshot", forKey: .type)
       try container.encode(session, forKey: .session)
@@ -198,6 +224,8 @@ struct WireRequest: Encodable, Sendable {
       try container.encode(agentID, forKey: .agentID)
       try container.encode(text, forKey: .text)
       try container.encode(submit, forKey: .submit)
+    case .revokeSelf:
+      try container.encode("revoke_self", forKey: .type)
     case .ping:
       try container.encode("ping", forKey: .type)
     }
@@ -205,11 +233,13 @@ struct WireRequest: Encodable, Sendable {
 }
 
 enum WireMessage: Sendable {
+  case paired(id: String, credential: BridgeCredential)
   case authenticated(id: String)
   case sessionSnapshot([BridgeSession])
   case agentSnapshot(id: String?, session: String, agents: [BridgeAgent])
   case agentFocused(id: String)
   case inputAcknowledged(id: String)
+  case revoked(id: String)
   case pong(id: String)
   case herdrState(session: String, state: HerdrAvailability)
   case error(id: String?, code: String, message: String)
@@ -217,7 +247,9 @@ enum WireMessage: Sendable {
 
   var id: String? {
     switch self {
-    case .authenticated(let id), .agentFocused(let id), .inputAcknowledged(let id), .pong(let id): id
+    case .paired(let id, _), .authenticated(let id), .agentFocused(let id),
+      .inputAcknowledged(let id), .revoked(let id), .pong(let id):
+      id
     case .agentSnapshot(let id, _, _), .error(let id, _, _), .unknown(let id, _): id
     case .sessionSnapshot, .herdrState: nil
     }
@@ -226,13 +258,14 @@ enum WireMessage: Sendable {
 
 extension WireMessage: Decodable {
   private enum CodingKeys: String, CodingKey {
-    case version, id, type, code, message, session, sessions, state, agents
+    case version, id, type, code, message, credential, session, sessions, state, agents
+    case deviceID = "device_id"
   }
 
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     let version = try container.decode(Int.self, forKey: .version)
-    guard version == 2 else {
+    guard version == 3 else {
       throw DecodingError.dataCorruptedError(
         forKey: .version,
         in: container,
@@ -242,6 +275,14 @@ extension WireMessage: Decodable {
 
     let type = try container.decode(String.self, forKey: .type)
     switch type {
+    case "paired":
+      self = .paired(
+        id: try container.decode(String.self, forKey: .id),
+        credential: BridgeCredential(
+          deviceID: try container.decode(String.self, forKey: .deviceID),
+          credential: try container.decode(String.self, forKey: .credential)
+        )
+      )
     case "authenticated":
       self = .authenticated(id: try container.decode(String.self, forKey: .id))
     case "session_snapshot":
@@ -256,6 +297,8 @@ extension WireMessage: Decodable {
       self = .agentFocused(id: try container.decode(String.self, forKey: .id))
     case "input_acknowledged":
       self = .inputAcknowledged(id: try container.decode(String.self, forKey: .id))
+    case "revoked":
+      self = .revoked(id: try container.decode(String.self, forKey: .id))
     case "pong":
       self = .pong(id: try container.decode(String.self, forKey: .id))
     case "herdr_state":

@@ -1,109 +1,125 @@
-# Herdr Remote Keypad
+# AgentSlate
 
-Herdr Remote Keypad is an iPhone companion for controlling coding agents running in Herdr while the user watches the laptop or another display. The phone shows current agents and their states, lets the user choose a target, and sends a small set of keys or printable text through an authenticated Rust bridge.
+<img src="docs/assets/agentslate-icon.png" alt="AgentSlate app icon" width="128">
 
-This repository contains the working Rust bridge, command-line probe, reusable Swift networking package, and the first native SwiftUI iPhone keypad. Physical-iPhone acceptance is the remaining step for the current milestone.
+**Remote control for Herdr.**
 
-## Current capabilities
+AgentSlate is an open-source iPhone companion for supervising coding agents running in [Herdr](https://herdr.dev/) on your Mac. It shows live agents and sessions, focuses the selected Herdr pane, and sends a small set of keys or short text while the terminal remains visible on another screen.
 
-- Authenticate over a private Tailscale TCP connection.
-- Receive live Herdr agent names, workspaces, and states.
-- Discover and switch between running named Herdr sessions on the connected Mac.
-- Focus an agent's existing Herdr pane by tapping its phone button.
-- Send arrows, Enter, Escape, Tab, Space, and printable text to a current agent.
-- Report Herdr availability and recover after Herdr or the network becomes unavailable.
-- Use the same protocol from the Rust probe or the Swift `HerdrRemoteClient` package.
-- Configure the bridge manually on iPhone with Keychain-backed token storage.
-- Select a Herdr session from the header, then select and focus a live agent from a four-column icon grid with compact working-folder labels.
-- Hold the Voice key to dictate on-device. Release normally to send text plus Enter, drag to the red upper-left Cancel target to discard, or drag to the blue upper-right Edit target to review and edit before sending.
-- Use agent-aware Accept and Deny shortcuts for blocked Codex, Claude Code, OMP, Cursor, and OpenCode panes while watching the agent's screen.
+> AgentSlate is beta software. Use it only on agents you can see, and review every permission prompt before accepting it.
 
-Terminal output is intentionally not sent to the phone. The keypad is designed for use while the agent's screen remains visible elsewhere. Accept and Deny send each supported agent's default terminal shortcut; they do not inspect or identify the permission request, so they are a watched-screen convenience rather than verified authorization.
+## What it does
 
-Voice prepares after an existing configuration loads, or after a new Bridge setup is saved and dismissed. The app requests microphone access only; speech recognition and its model stay on the iPhone. An edited draft can send only while its original agent and Herdr session remain selected and available. With VoiceOver, activate Voice once to start and again to send, or use the named Edit dictation and Cancel dictation actions.
+- Connects directly to your Mac over your private Tailscale network.
+- Pairs with a six-digit, single-use code instead of a shared token.
+- Gives each iPhone its own revocable credential stored in Keychain.
+- Shows Herdr sessions, agents, workspaces, and current states.
+- Sends arrows, Enter, Escape, Tab, Shift+Tab, Space, and printable text.
+- Offers watched-screen Accept and Deny shortcuts for supported agent defaults.
+- Keeps dictation on the iPhone and sends only the resulting text.
+- Includes an offline Demo Mode that never contacts a bridge.
 
-## Build and test
+AgentSlate does not stream terminal output, expose arbitrary shell commands, use analytics, or require a cloud account.
 
-Requirements:
+## Requirements
 
-- macOS with Rust 1.85 or newer
-- Swift 6 or newer for builds; full Xcode for the standard Swift test runner
-- Herdr 0.7.4 or newer running locally
-- Tailscale for non-local connections
-- iOS 26 or newer for the iPhone app's on-device speech support
+- A Mac running Herdr 0.7.4 or newer
+- Tailscale on the Mac and iPhone
+- iOS 26 or newer
+
+## Install the Mac bridge
+
+The Homebrew formula builds the Rust bridge from source:
+
+```sh
+brew install DanielOu1208/agentslate/agentslate
+agentslate doctor
+brew services start agentslate
+```
+
+Check the service at any time:
+
+```sh
+brew services info agentslate
+agentslate doctor
+```
+
+AgentSlate listens only on loopback or Tailscale addresses. It does not offer a public or general-LAN listening mode.
+
+## Pair an iPhone
+
+1. Make sure Herdr, Tailscale, and the AgentSlate service are running on the Mac.
+2. Create a pairing code:
+
+   ```sh
+   agentslate pair
+   ```
+
+3. In the iPhone app, enter the Mac's Tailscale address and the six-digit code.
+
+The code expires after ten minutes, works once, and locks after five failed attempts. A successful pairing creates a separate device credential for that iPhone.
+
+Manage paired phones from the Mac:
+
+```sh
+agentslate devices list
+agentslate devices revoke DEVICE_ID
+```
+
+Use **Forget Bridge** in the iPhone app to revoke that phone and remove its local credentials. If the Mac is offline, AgentSlate clears the phone and explains how to revoke the remaining Mac record later.
+
+## Run from source
+
+Install Rust 1.85 or newer, then:
 
 ```sh
 cargo build
 cargo test
-swift build --package-path swift-client
-```
-
-With full Xcode installed:
-
-```sh
-swift test --package-path swift-client
-```
-
-Build and test the iOS app with Xcode or from the command line:
-
-```sh
-xcodebuild test \
-  -project ios/HerdrRemoteKeypad.xcodeproj \
-  -scheme HerdrRemoteKeypad \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max'
-```
-
-The Command Line Tools-only installation on this Mac keeps Swift Testing outside the default search paths. Use:
-
-```sh
-swift test --package-path swift-client \
-  -Xswiftc -F -Xswiftc /Library/Developer/CommandLineTools/Library/Developer/Frameworks \
-  -Xlinker -rpath -Xlinker /Library/Developer/CommandLineTools/Library/Developer/Frameworks \
-  -Xlinker -rpath -Xlinker /Library/Developer/CommandLineTools/Library/Developer/usr/lib
-```
-
-## Configure
-
-Create the development credential once:
-
-```sh
-cargo run -- setup
-```
-
-The token is stored at `~/.config/herdr-remote-keypad/token` with owner-only permissions. The command never replaces an existing token.
-
-## Run the bridge
-
-The default command discovers the machine's Tailscale IPv4 address and listens on port `8765`:
-
-```sh
+cargo run -- doctor
 cargo run -- serve
 ```
 
-For a local-only test:
+Build the reusable Swift package:
 
 ```sh
-cargo run -- serve --listen 127.0.0.1:8765
+swift build --package-path swift-client
+swift test --package-path swift-client
 ```
 
-Normal startup discovers running sessions with `herdr session list --json`. Use `--herdr-socket PATH` only for a fixed custom socket; this disables discovery and exposes one session named `custom`. The bridge intentionally ignores Herdr's inherited `HERDR_SOCKET_PATH` so starting it from inside a Herdr pane still discovers every session.
-
-## Probe the bridge
-
-The probe reads the same local token file by default:
+Build and test the iPhone app with full Xcode:
 
 ```sh
-cargo run -- probe --address 127.0.0.1:8765 sessions
-cargo run -- probe --address 127.0.0.1:8765 list default
-cargo run -- probe --address 127.0.0.1:8765 key default w1:p1 arrow_down
-cargo run -- probe --address 127.0.0.1:8765 text default w1:p1 --submit "Continue with the simplest fix."
-cargo run -- probe --address 127.0.0.1:8765 ping
+xcodebuild test \
+  -project ios/AgentSlate.xcodeproj \
+  -scheme AgentSlate \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max,OS=latest'
 ```
 
-Do not send test input to an agent doing valuable work. Automated input tests use a fake Herdr socket; live input acceptance uses a disposable pane.
+Do not send test input to an agent doing valuable work. Live input acceptance should use a disposable Herdr pane.
 
-## Documents
+## Privacy, support, and security
+
+- [Privacy policy](docs/privacy.md)
+- [Support](docs/support.md)
+- [Security policy](SECURITY.md)
+- [Contributing](CONTRIBUTING.md)
+- [Third-party notices](THIRD_PARTY_NOTICES.md)
+
+Public support belongs in [GitHub Issues](https://github.com/DanielOu1208/agentslate/issues). Report security problems privately through [GitHub Security Advisories](https://github.com/DanielOu1208/agentslate/security/advisories/new).
+
+## Project documents
 
 - [Product requirements](docs/PRD.md)
-- [Bridge protocol v2](docs/PROTOCOL.md)
+- [Protocol v3](docs/PROTOCOL.md)
 - [Implementation tracker](docs/IMPLEMENTATION_TRACKER.md)
+- [Release checklist and App Store metadata](docs/RELEASE_CHECKLIST.md)
+
+## Non-affiliation
+
+AgentSlate is an independent project. It is not affiliated with, endorsed by, or sponsored by Herdr, Tailscale, Apple, or the makers of the coding agents whose names and marks appear in the app. Those names and marks belong to their respective owners.
+
+This project is also unrelated to the existing [pathupally/AgentSlate repository](https://github.com/pathupally/AgentSlate) and Random Labs' [Slate coding agent](https://www.ycombinator.com/companies/random-labs).
+
+## License
+
+AgentSlate is available under the [MIT License](LICENSE).

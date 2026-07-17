@@ -3,16 +3,16 @@
 import PackageDescription
 
 let package = Package(
-    name: "HerdrRemoteClient",
+    name: "AgentSlateClient",
     platforms: [
         .macOS(.v14),
         .iOS(.v18),
     ],
     products: [
-        .library(name: "HerdrRemoteClient", targets: ["HerdrRemoteClient"]),
+        .library(name: "AgentSlateClient", targets: ["AgentSlateClient"]),
     ],
     targets: [
-        .target(name: "HerdrRemoteClient"),
-        .testTarget(name: "HerdrRemoteClientTests", dependencies: ["HerdrRemoteClient"]),
+        .target(name: "AgentSlateClient"),
+        .testTarget(name: "AgentSlateClientTests", dependencies: ["AgentSlateClient"]),
     ]
 )

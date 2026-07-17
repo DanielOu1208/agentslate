@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct HerdrRemoteKeypadApp: App {
+struct AgentSlateApp: App {
   var body: some Scene {
     WindowGroup {
       ContentView()

@@ -1,4 +1,4 @@
-import HerdrRemoteClient
+import AgentSlateClient
 import SwiftUI
 
 struct ContentView: View {
@@ -131,12 +131,12 @@ struct ContentView: View {
       }
     }
     .onChange(of: showingSettings) { _, isShowing in
-      guard !isShowing, model.hasConfiguration else { return }
+      guard !isShowing, model.hasConfiguration || model.isDemoMode else { return }
       Task { await model.prepareVoice() }
     }
     .onChange(of: scenePhase) { _, phase in
       if phase == .active {
-        guard model.hasConfiguration else { return }
+        guard model.hasConfiguration || model.isDemoMode else { return }
         Task { await model.prepareVoice() }
       } else {
         Task { await model.cancelVoice() }
@@ -168,6 +168,14 @@ struct ContentView: View {
       sessionControl
 
       Spacer()
+
+      if model.isDemoMode {
+        Text("OFFLINE DEMO")
+          .font(.system(size: 10, weight: .black, design: .rounded))
+          .tracking(0.7)
+          .foregroundStyle(Palette.blue)
+          .accessibilityLabel("Offline Demo Mode")
+      }
 
       Button {
         showingSettings = true
@@ -1041,6 +1049,9 @@ private struct RemoteActionButton: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     .buttonStyle(TactileKeyStyle())
+    .disabled(!enabled)
+    .opacity(enabled ? 1 : 0.5)
+    .animation(.easeOut(duration: 0.18), value: enabled)
     .accessibilityLabel(action == .accept ? "Accept" : "Deny")
     .accessibilityHint(
       enabled
@@ -1243,10 +1254,10 @@ private struct VoiceReviewView: View {
     case .controlCharacters:
       return "Remove tabs or other control characters before sending."
     case .tooLarge:
-      return "(validation.byteCount) of 8,192 UTF-8 bytes. Shorten the prompt to send it."
+      return "\(validation.byteCount) of 8,192 UTF-8 bytes. Shorten the prompt to send it."
     case nil:
       if !targetAvailable {
-        return "Reconnect and reselect (draft.agentName) in (draft.session) to send this draft."
+        return "Reconnect and reselect \(draft.agentName) in \(draft.session) to send this draft."
       }
       return nil
     }
@@ -1257,35 +1268,115 @@ private struct SettingsView: View {
   let model: AppModel
   @Environment(\.dismiss) private var dismiss
   @State private var host: String
-  @State private var token: String
+  @State private var code = ""
+  @State private var showingForgetConfirmation = false
+  @State private var notice: SettingsNotice?
 
   init(model: AppModel) {
     self.model = model
     _host = State(initialValue: model.configuredHost)
-    _token = State(initialValue: model.configuredToken)
   }
 
   var body: some View {
     NavigationStack {
       Form {
-        Section("Bridge") {
-          TextField("Tailscale host", text: $host)
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
-            .keyboardType(.URL)
-          SecureField("64-character token", text: $token)
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
-            .textContentType(.oneTimeCode)
-            .font(.system(.body, design: .monospaced))
+        Section("Setup") {
+          if model.hasConfiguration {
+            Text("Forget the current bridge before pairing with another Mac.")
+              .foregroundStyle(Palette.secondaryText)
+          } else {
+            TextField("Tailscale host", text: $host)
+              .textInputAutocapitalization(.never)
+              .autocorrectionDisabled()
+              .keyboardType(.URL)
+            TextField("6-digit pairing code", text: $code)
+              .textInputAutocapitalization(.never)
+              .autocorrectionDisabled()
+              .textContentType(.oneTimeCode)
+              .keyboardType(.numberPad)
+              .font(.system(.body, design: .monospaced))
+              .onChange(of: code) { _, value in
+                code = String(
+                  decoding: value.utf8.filter { (48...57).contains($0) }.prefix(6),
+                  as: UTF8.self
+                )
+              }
+
+            Button {
+              Task {
+                if await model.pair(host: host, code: code) {
+                  dismiss()
+                }
+              }
+            } label: {
+              if model.isPairing {
+                HStack {
+                  ProgressView()
+                  Text("Pairing…")
+                }
+              } else {
+                Text("Pair & Connect")
+              }
+            }
+            .disabled(
+              model.isPairing
+                || host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || code.count != 6
+            )
+          }
         }
 
-        Section {
-          Text(
-            "The app connects to port 8765. The token stays in this device's Keychain and is never logged."
-          )
-          .font(.footnote)
-          .foregroundStyle(Palette.secondaryText)
+        if !model.hasConfiguration {
+          Section {
+            Text(
+              "On your Mac, run “agentslate pair”, then enter the code shown. AgentSlate connects to port 8765 and keeps the resulting device credential in Keychain."
+            )
+            .font(.footnote)
+            .foregroundStyle(Palette.secondaryText)
+          }
+        }
+
+        Section("Offline Preview") {
+          Button {
+            Task {
+              await model.activateDemoMode()
+              dismiss()
+            }
+          } label: {
+            Label(
+              model.isDemoMode ? "Restart Offline Demo" : "Start Offline Demo",
+              systemImage: "iphone.slash"
+            )
+          }
+          Text("Uses fixed fake agents and never contacts a bridge.")
+            .font(.footnote)
+            .foregroundStyle(Palette.secondaryText)
+        }
+
+        Section("Help & Legal") {
+          Link(destination: URL(string: "https://danielou1208.github.io/agentslate/support/")!) {
+            Label("Support", systemImage: "questionmark.circle")
+          }
+          Link(destination: URL(string: "https://danielou1208.github.io/agentslate/privacy/")!) {
+            Label("Privacy", systemImage: "hand.raised")
+          }
+          NavigationLink {
+            AcknowledgementsView()
+          } label: {
+            Label("Acknowledgements", systemImage: "doc.text")
+          }
+        }
+
+        if model.hasConfiguration {
+          Section {
+            Button("Forget Bridge", role: .destructive) {
+              showingForgetConfirmation = true
+            }
+          } footer: {
+            Text(
+              "When connected, AgentSlate also revokes this iPhone on the Mac. If offline, remove the remaining Mac record with “agentslate devices revoke DEVICE_ID”."
+            )
+          }
         }
 
         if let errorMessage = model.errorMessage {
@@ -1294,26 +1385,97 @@ private struct SettingsView: View {
               .foregroundStyle(Palette.blocked)
           }
         }
+
+        Section {
+          LabeledContent("Version", value: appVersion)
+          Text("Remote control for Herdr.")
+            .foregroundStyle(Palette.secondaryText)
+        }
       }
       .scrollContentBackground(.hidden)
       .background(Palette.canvas)
-      .navigationTitle("Bridge setup")
+      .navigationTitle("AgentSlate")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
-        if model.hasConfiguration {
+        if model.hasConfiguration || model.isDemoMode {
           ToolbarItem(placement: .cancellationAction) {
-            Button("Cancel") { dismiss() }
+            Button("Done") { dismiss() }
           }
-        }
-        ToolbarItem(placement: .confirmationAction) {
-          Button("Save & Connect") {
-            if model.configure(host: host, token: token) { dismiss() }
-          }
-          .disabled(host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || token.isEmpty)
         }
       }
     }
-    .interactiveDismissDisabled(!model.hasConfiguration)
+    .interactiveDismissDisabled(!model.hasConfiguration && !model.isDemoMode)
+    .confirmationDialog(
+      "Forget this bridge?",
+      isPresented: $showingForgetConfirmation,
+      titleVisibility: .visible
+    ) {
+      Button("Forget Bridge", role: .destructive) {
+        Task {
+          let result = await model.forgetBridge()
+          notice =
+            switch result {
+            case .revoked:
+              SettingsNotice(
+                title: "Bridge Forgotten",
+                message: "This iPhone was revoked on the Mac and its local credential was removed."
+              )
+            case .localOnly:
+              SettingsNotice(
+                title: "Credential Removed",
+                message:
+                  "The bridge was offline, so its Mac record may remain. Run “agentslate devices list”, then “agentslate devices revoke DEVICE_ID” on the Mac."
+              )
+            case .failed(let message):
+              SettingsNotice(title: "Could Not Forget Bridge", message: message)
+            }
+        }
+      }
+    } message: {
+      Text("This removes the saved device credential from this iPhone.")
+    }
+    .alert(item: $notice) { notice in
+      Alert(
+        title: Text(notice.title),
+        message: Text(notice.message),
+        dismissButton: .default(Text("OK"))
+      )
+    }
+  }
+
+  private var appVersion: String {
+    let info = Bundle.main.infoDictionary
+    let version = info?["CFBundleShortVersionString"] as? String ?? "0.1.0"
+    let build = info?["CFBundleVersion"] as? String ?? "3"
+    return "\(version) (\(build))"
+  }
+}
+
+private struct SettingsNotice: Identifiable {
+  let id = UUID()
+  let title: String
+  let message: String
+}
+
+private struct AcknowledgementsView: View {
+  var body: some View {
+    ScrollView {
+      Text(text)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+    }
+    .background(Palette.canvas)
+    .navigationTitle("Acknowledgements")
+    .navigationBarTitleDisplayMode(.inline)
+  }
+
+  private var text: String {
+    guard let url = Bundle.main.url(forResource: "THIRD_PARTY_NOTICES", withExtension: "md"),
+      let value = try? String(contentsOf: url, encoding: .utf8)
+    else {
+      return "Acknowledgements are unavailable."
+    }
+    return value
   }
 }
 

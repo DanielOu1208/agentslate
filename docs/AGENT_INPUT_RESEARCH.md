@@ -5,7 +5,7 @@ Status: Research complete; watched-screen shortcut MVP implemented
 
 ## Summary
 
-Herdr Remote Keypad exposes the universal terminal controls used by coding agents: arrow keys, Enter, Tab, **Escape**, and **Shift+Tab** for cycling Plan, Manual, and automatic approval modes.
+AgentSlate exposes the universal terminal controls used by coding agents: arrow keys, Enter, Tab, **Escape**, and **Shift+Tab** for cycling Plan, Manual, and automatic approval modes.
 
 The Accept and Deny buttons now provide a deliberately narrow watched-screen shortcut for five mainstream agents. They enable only for a selected supported agent that Herdr reports as blocked, and the bridge checks a fresh snapshot before sending. This reduces stale-state mistakes but does not identify the permission request or prove what the prompt currently means.
 

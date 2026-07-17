@@ -2,7 +2,12 @@ import Foundation
 @preconcurrency import Network
 import Testing
 
-@testable import HerdrRemoteClient
+@testable import AgentSlateClient
+
+private let testCredential = BridgeCredential(
+  deviceID: String(repeating: "b", count: 32),
+  credential: String(repeating: "a", count: 64)
+)
 
 private enum TestFailure: Error {
   case timeout
@@ -20,10 +25,9 @@ private struct RecordedRequest: Equatable, Sendable {
 }
 
 private final class FakeBridge: @unchecked Sendable {
-  private let queue = DispatchQueue(label: "HerdrRemoteClientTests.FakeBridge")
+  private let queue = DispatchQueue(label: "AgentSlateClientTests.FakeBridge")
   private let listener: NWListener
   private let lock = NSLock()
-  private let expectedToken = String(repeating: "a", count: 64)
   private let rejectAuthentication: Bool
   private let dropFirstConnection: Bool
   private let dropOnPing: Bool
@@ -100,8 +104,34 @@ private final class FakeBridge: @unchecked Sendable {
     }
 
     switch type {
+    case "pair":
+      if request["code"] as? String == "123456",
+        request["device_name"] as? String == "Test iPhone"
+      {
+        handler.send([
+          response(
+            id: id,
+            type: "paired",
+            extra: [
+              "device_id": testCredential.deviceID,
+              "credential": testCredential.credential,
+            ]
+          )
+        ], cancelAfterSending: true)
+      } else {
+        handler.send([
+          response(
+            id: id,
+            type: "error",
+            extra: ["code": "pairing_failed", "message": "pairing failed"]
+          )
+        ], cancelAfterSending: true)
+      }
     case "authenticate":
-      if rejectAuthentication || request["token"] as? String != expectedToken {
+      if rejectAuthentication
+        || request["device_id"] as? String != testCredential.deviceID
+        || request["credential"] as? String != testCredential.credential
+      {
         handler.send(
           [
             response(
@@ -162,6 +192,8 @@ private final class FakeBridge: @unchecked Sendable {
       handler.send([
         response(id: id, type: type == "focus_agent" ? "agent_focused" : "input_acknowledged")
       ])
+    case "revoke_self":
+      handler.send([response(id: id, type: "revoked")])
     default:
       handler.send([
         response(
@@ -175,16 +207,16 @@ private final class FakeBridge: @unchecked Sendable {
   }
 
   private func response(id: String, type: String, extra: [String: Any] = [:]) -> [String: Any] {
-    ["version": 2, "id": id, "type": type].merging(extra) { _, new in new }
+    ["version": 3, "id": id, "type": type].merging(extra) { _, new in new }
   }
 
   private func event(type: String, extra: [String: Any]) -> [String: Any] {
-    ["version": 2, "event_id": 1, "type": type].merging(extra) { _, new in new }
+    ["version": 3, "event_id": 1, "type": type].merging(extra) { _, new in new }
   }
 
   private func snapshot(id: String? = nil, eventID: Int? = nil) -> [String: Any] {
     var message: [String: Any] = [
-      "version": 2,
+      "version": 3,
       "type": "agent_snapshot",
       "session": "default",
       "herdr_protocol": 16,
@@ -281,7 +313,7 @@ private func withTimeout<T: Sendable>(
   let client = try BridgeClient(
     host: "127.0.0.1",
     port: port,
-    token: String(repeating: "a", count: 64)
+    credential: testCredential
   )
   let agents = Task { () throws -> [BridgeAgent] in
     for await event in client.events {
@@ -330,8 +362,45 @@ private func withTimeout<T: Sendable>(
         text: "continue", submit: true),
     ])
   #expect(bridge.snapshotRequestCount == 0)
+  try await client.revokeSelf()
   await client.stop()
   bridge.stop()
+}
+
+@Test func pairReturnsPerDeviceCredential() async throws {
+  let bridge = try FakeBridge()
+  let port = try await bridge.start()
+  let credential = try await BridgeClient.pair(
+    host: "127.0.0.1",
+    port: port,
+    code: "123456",
+    deviceName: "Test iPhone"
+  )
+
+  #expect(credential == testCredential)
+  bridge.stop()
+}
+
+@Test func cancellingPairingCompletesPromptly() async throws {
+  let operation = Task {
+    try await BridgeClient.pair(
+      host: "127.0.0.1",
+      port: 9,
+      code: "123456",
+      deviceName: "Test iPhone"
+    )
+  }
+  operation.cancel()
+  do {
+    _ = try await withTimeout { try await operation.value }
+    Issue.record("cancelled pairing unexpectedly succeeded")
+  } catch is CancellationError {
+    // Expected.
+  } catch TestFailure.timeout {
+    Issue.record("cancelled pairing did not finish")
+  } catch {
+    // The local discard endpoint can fail before cancellation wins the race.
+  }
 }
 
 @Test func authenticationFailureDoesNotReconnect() async throws {
@@ -340,7 +409,7 @@ private func withTimeout<T: Sendable>(
   let client = try BridgeClient(
     host: "127.0.0.1",
     port: port,
-    token: String(repeating: "a", count: 64)
+    credential: testCredential
   )
   let failure = Task { () throws -> BridgeError in
     for await event in client.events {
@@ -364,7 +433,7 @@ private func withTimeout<T: Sendable>(
   let client = try BridgeClient(
     host: "127.0.0.1",
     port: port,
-    token: String(repeating: "a", count: 64)
+    credential: testCredential
   )
   let connections = Task { () throws -> Int in
     var connectedEvents = 0
@@ -401,7 +470,7 @@ private func withTimeout<T: Sendable>(
   let client = try BridgeClient(
     host: "127.0.0.1",
     port: port,
-    token: String(repeating: "a", count: 64)
+    credential: testCredential
   )
   let reconnectAttempt = Task { () throws -> Int in
     for await event in client.events {
@@ -419,15 +488,22 @@ private func withTimeout<T: Sendable>(
 
 @Test func invalidConfigurationAndTextFailLocally() async throws {
   do {
-    _ = try BridgeClient(host: "127.0.0.1", token: "not-a-token")
-    Issue.record("invalid token was accepted")
+    _ = try BridgeClient(
+      host: "127.0.0.1",
+      credential: BridgeCredential(deviceID: "bad", credential: "bad")
+    )
+    Issue.record("invalid credential was accepted")
   } catch let error as BridgeError {
-    #expect(error == .invalidToken)
+    #expect(error == .invalidCredential)
+  }
+  await #expect(throws: BridgeError.invalidPairingCode) {
+    _ = try await BridgeClient.pair(
+      host: "127.0.0.1", code: "12-456", deviceName: "Test iPhone")
   }
 
   let client = try BridgeClient(
     host: "127.0.0.1",
-    token: String(repeating: "a", count: 64)
+    credential: testCredential
   )
   do {
     try await client.send(
@@ -444,7 +520,7 @@ private func withTimeout<T: Sendable>(
   let client = try BridgeClient(
     host: "127.0.0.1",
     port: port,
-    token: String(repeating: "a", count: 64)
+    credential: testCredential
   )
   let connected = Task { () throws -> Void in
     for await event in client.events where event == .connectionState(.connected) {
@@ -474,7 +550,7 @@ private func withTimeout<T: Sendable>(
   let client = try BridgeClient(
     host: "127.0.0.1",
     port: port,
-    token: String(repeating: "a", count: 64)
+    credential: testCredential
   )
   let connected = Task { () throws -> Void in
     for await event in client.events where event == .connectionState(.connected) {
@@ -501,7 +577,7 @@ private func withTimeout<T: Sendable>(
   let client = try BridgeClient(
     host: "127.0.0.1",
     port: port,
-    token: String(repeating: "a", count: 64)
+    credential: testCredential
   )
   let reconnecting = Task { () throws -> Void in
     for await event in client.events {
@@ -520,20 +596,20 @@ private func withTimeout<T: Sendable>(
   bridge.stop()
 }
 
-@Test(.enabled(if: ProcessInfo.processInfo.environment["HERDR_BRIDGE_TOKEN_FILE"] != nil))
+@Test(.enabled(if: ProcessInfo.processInfo.environment["AGENTSLATE_BRIDGE_CREDENTIAL_FILE"] != nil))
 func liveRustBridgeSmokeTest() async throws {
   let environment = ProcessInfo.processInfo.environment
-  let address = environment["HERDR_BRIDGE_ADDRESS"] ?? "127.0.0.1:8765"
+  let address = environment["AGENTSLATE_BRIDGE_ADDRESS"] ?? "127.0.0.1:8765"
   guard let separator = address.lastIndex(of: ":"),
     let port = UInt16(address[address.index(after: separator)...]),
-    let tokenFile = environment["HERDR_BRIDGE_TOKEN_FILE"]
+    let credentialFile = environment["AGENTSLATE_BRIDGE_CREDENTIAL_FILE"]
   else {
     throw BridgeError.invalidAddress
   }
   let host = String(address[..<separator])
-  let token = try String(contentsOfFile: tokenFile, encoding: .utf8)
-    .trimmingCharacters(in: .whitespacesAndNewlines)
-  let client = try BridgeClient(host: host, port: port, token: token)
+  let credential = try JSONDecoder().decode(
+    BridgeCredential.self, from: Data(contentsOf: URL(fileURLWithPath: credentialFile)))
+  let client = try BridgeClient(host: host, port: port, credential: credential)
   let agents = Task { () throws -> [BridgeAgent] in
     for await event in client.events {
       if case .agents(_, let agents) = event {

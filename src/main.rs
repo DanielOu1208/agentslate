@@ -1,6 +1,6 @@
-use herdr_remote_keypad::probe::{self, ProbeAction};
-use herdr_remote_keypad::server::{self, ServerConfig};
-use herdr_remote_keypad::token;
+use agentslate::devices::{DeviceStore, default_state_dir};
+use agentslate::herdr::{HerdrClient, discover_sessions};
+use agentslate::server::{self, ServerConfig};
 use std::collections::VecDeque;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -16,38 +16,127 @@ async fn main() {
 async fn run() -> Result<(), String> {
     let mut arguments = std::env::args().skip(1).collect::<VecDeque<_>>();
     match arguments.pop_front().as_deref() {
-        Some("setup") => setup(arguments),
+        Some("pair") => pair(arguments),
+        Some("devices") => devices(arguments),
+        Some("doctor") => doctor(arguments).await,
         Some("serve") => serve(arguments).await,
-        Some("probe") => probe(arguments).await,
         Some("help") | Some("--help") | Some("-h") | None => {
-            print_usage();
+            println!("{}", usage());
             Ok(())
         }
         Some(command) => Err(format!("unknown command '{command}'\n\n{}", usage())),
     }
 }
 
-fn setup(mut arguments: VecDeque<String>) -> Result<(), String> {
-    let token_file =
-        parse_path_option(&mut arguments, "--token-file")?.unwrap_or(token::default_token_path()?);
+fn pair(mut arguments: VecDeque<String>) -> Result<(), String> {
+    let state_dir =
+        take_path_option(&mut arguments, "--state-dir")?.unwrap_or(default_state_dir()?);
     reject_remaining(arguments)?;
-    let created = token::initialize(&token_file)?;
-    if created {
-        println!(
-            "Created private development token at {}",
-            token_file.display()
-        );
-    } else {
-        println!("Using existing token at {}", token_file.display());
+    let code = DeviceStore::new(state_dir).create_pairing()?;
+    println!("Pairing code: {code}");
+    println!("Expires in 10 minutes. The code can be used once.");
+    Ok(())
+}
+
+fn devices(mut arguments: VecDeque<String>) -> Result<(), String> {
+    let command = arguments
+        .pop_front()
+        .ok_or_else(|| format!("devices requires list or revoke\n\n{}", usage()))?;
+    match command.as_str() {
+        "list" => {
+            let state_dir =
+                take_path_option(&mut arguments, "--state-dir")?.unwrap_or(default_state_dir()?);
+            reject_remaining(arguments)?;
+            let devices = DeviceStore::new(state_dir).list()?;
+            if devices.is_empty() {
+                println!("No paired devices.");
+            } else {
+                for device in devices {
+                    println!("{}\t{}\t{}", device.id, device.name, device.paired_at);
+                }
+            }
+            Ok(())
+        }
+        "revoke" => {
+            let device_id = arguments
+                .pop_front()
+                .ok_or("devices revoke requires DEVICE_ID")?;
+            let state_dir =
+                take_path_option(&mut arguments, "--state-dir")?.unwrap_or(default_state_dir()?);
+            reject_remaining(arguments)?;
+            if DeviceStore::new(state_dir).revoke(&device_id)? {
+                println!("Revoked device {device_id}.");
+                Ok(())
+            } else {
+                Err(format!("device {device_id} was not found"))
+            }
+        }
+        _ => Err(format!("unknown devices command '{command}'")),
     }
-    println!("The token value is not printed. Keep this file private.");
+}
+
+async fn doctor(mut arguments: VecDeque<String>) -> Result<(), String> {
+    let mut herdr_socket = None;
+    let mut state_dir = None;
+    while let Some(argument) = arguments.pop_front() {
+        match argument.as_str() {
+            "--herdr-socket" => {
+                herdr_socket = Some(PathBuf::from(
+                    arguments
+                        .pop_front()
+                        .ok_or("--herdr-socket requires a path")?,
+                ));
+            }
+            "--state-dir" => {
+                state_dir = Some(PathBuf::from(
+                    arguments.pop_front().ok_or("--state-dir requires a path")?,
+                ));
+            }
+            _ => return Err(format!("unknown doctor option '{argument}'")),
+        }
+    }
+
+    let store = DeviceStore::new(state_dir.unwrap_or(default_state_dir()?));
+    store.initialize()?;
+    println!(
+        "ok: private state directory {}",
+        store.state_dir().display()
+    );
+
+    let tailscale = server::resolve_tailscale_command()?;
+    let address = server::discover_tailscale_address(8765)?;
+    server::validate_listen_address(address)?;
+    println!(
+        "ok: Tailscale CLI {} ({})",
+        tailscale.display(),
+        address.ip()
+    );
+
+    if let Some(socket) = herdr_socket {
+        HerdrClient::new(socket.clone())
+            .snapshot()
+            .await
+            .map_err(|error| format!("Herdr socket {} failed: {error}", socket.display()))?;
+        println!("ok: Herdr socket {}", socket.display());
+    } else {
+        let sessions = discover_sessions()?;
+        let session = sessions
+            .first()
+            .ok_or("Herdr reported no running sessions")?;
+        HerdrClient::new(session.socket_path.clone())
+            .snapshot()
+            .await
+            .map_err(|error| format!("Herdr session '{}' failed: {error}", session.name))?;
+        println!("ok: Herdr session {}", session.name);
+    }
+    println!("AgentSlate is ready.");
     Ok(())
 }
 
 async fn serve(mut arguments: VecDeque<String>) -> Result<(), String> {
     let mut listen = None;
     let mut herdr_socket = None;
-    let mut token_file = None;
+    let mut state_dir = None;
     while let Some(argument) = arguments.pop_front() {
         match argument.as_str() {
             "--listen" => {
@@ -66,11 +155,9 @@ async fn serve(mut arguments: VecDeque<String>) -> Result<(), String> {
                         .ok_or("--herdr-socket requires a path")?,
                 ));
             }
-            "--token-file" => {
-                token_file = Some(PathBuf::from(
-                    arguments
-                        .pop_front()
-                        .ok_or("--token-file requires a path")?,
+            "--state-dir" => {
+                state_dir = Some(PathBuf::from(
+                    arguments.pop_front().ok_or("--state-dir requires a path")?,
                 ));
             }
             _ => return Err(format!("unknown serve option '{argument}'")),
@@ -79,83 +166,12 @@ async fn serve(mut arguments: VecDeque<String>) -> Result<(), String> {
     server::run(ServerConfig {
         listen,
         herdr_socket,
-        token_file: token_file.unwrap_or(token::default_token_path()?),
+        state_dir: state_dir.unwrap_or(default_state_dir()?),
     })
     .await
 }
 
-async fn probe(mut arguments: VecDeque<String>) -> Result<(), String> {
-    let mut address = "127.0.0.1:8765".to_owned();
-    let mut token_file = token::default_token_path()?;
-    loop {
-        match arguments.front().map(String::as_str) {
-            Some("--address") => {
-                arguments.pop_front();
-                address = arguments
-                    .pop_front()
-                    .ok_or("--address requires HOST:PORT")?;
-            }
-            Some("--token-file") => {
-                arguments.pop_front();
-                token_file = PathBuf::from(
-                    arguments
-                        .pop_front()
-                        .ok_or("--token-file requires a path")?,
-                );
-            }
-            _ => break,
-        }
-    }
-
-    let action = match arguments.pop_front().as_deref() {
-        Some("sessions") => {
-            reject_remaining(arguments)?;
-            ProbeAction::Sessions
-        }
-        Some("list") => {
-            let session = arguments.pop_front().ok_or("list requires SESSION")?;
-            reject_remaining(arguments)?;
-            ProbeAction::List { session }
-        }
-        Some("key") => {
-            let session = arguments.pop_front().ok_or("key requires SESSION")?;
-            let agent_id = arguments.pop_front().ok_or("key requires AGENT_ID")?;
-            let key = arguments.pop_front().ok_or("key requires KEY")?;
-            reject_remaining(arguments)?;
-            ProbeAction::Key {
-                session,
-                agent_id,
-                key,
-            }
-        }
-        Some("text") => {
-            let session = arguments.pop_front().ok_or("text requires SESSION")?;
-            let agent_id = arguments.pop_front().ok_or("text requires AGENT_ID")?;
-            let submit = arguments.front().is_some_and(|value| value == "--submit");
-            if submit {
-                arguments.pop_front();
-            }
-            if arguments.is_empty() {
-                return Err("text requires TEXT".into());
-            }
-            ProbeAction::Text {
-                session,
-                agent_id,
-                text: arguments.into_iter().collect::<Vec<_>>().join(" "),
-                submit,
-            }
-        }
-        Some("ping") => {
-            reject_remaining(arguments)?;
-            ProbeAction::Ping
-        }
-        Some(command) => return Err(format!("unknown probe command '{command}'")),
-        None => return Err(format!("probe requires a command\n\n{}", usage())),
-    };
-    probe::run(address, token_file, action).await
-}
-
-fn parse_path_option(
+fn take_path_option(
     arguments: &mut VecDeque<String>,
     option: &str,
 ) -> Result<Option<PathBuf>, String> {
@@ -183,18 +199,12 @@ fn reject_remaining(arguments: VecDeque<String>) -> Result<(), String> {
     }
 }
 
-fn print_usage() {
-    println!("{}", usage());
-}
-
 fn usage() -> &'static str {
-    "Herdr Remote Keypad connector\n\n\
+    "AgentSlate — Remote control for Herdr\n\n\
 Usage:\n\
-  herdr-remote-keypad setup [--token-file PATH]\n\
-  herdr-remote-keypad serve [--listen IP:PORT] [--herdr-socket PATH] [--token-file PATH]\n\
-  herdr-remote-keypad probe [--address HOST:PORT] [--token-file PATH] sessions\n\
-  herdr-remote-keypad probe [options] list SESSION\n\
-  herdr-remote-keypad probe [options] key SESSION AGENT_ID KEY\n\
-  herdr-remote-keypad probe [options] text SESSION AGENT_ID [--submit] TEXT\n\
-  herdr-remote-keypad probe [options] ping"
+  agentslate pair [--state-dir PATH]\n\
+  agentslate devices list [--state-dir PATH]\n\
+  agentslate devices revoke DEVICE_ID [--state-dir PATH]\n\
+  agentslate doctor [--herdr-socket PATH] [--state-dir PATH]\n\
+  agentslate serve [--listen IP:PORT] [--herdr-socket PATH] [--state-dir PATH]"
 }

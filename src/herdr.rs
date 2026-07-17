@@ -300,7 +300,7 @@ mod tests {
     #[tokio::test]
     async fn requests_and_normalizes_a_fake_snapshot() {
         let socket = std::env::temp_dir().join(format!(
-            "herdr-remote-keypad-test-{}-{}.sock",
+            "agentslate-herdr-test-{}-{}.sock",
             std::process::id(),
             REQUEST_ID.fetch_add(1, Ordering::Relaxed)
         ));

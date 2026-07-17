@@ -1,7 +1,8 @@
 import Foundation
-import HerdrRemoteClient
+import AgentSlateClient
 import Observation
 import Security
+import UIKit
 
 enum VoiceState: Equatable {
   case notPrepared
@@ -43,6 +44,12 @@ enum VoiceTextIssue: Equatable {
   case blank
   case controlCharacters
   case tooLarge
+}
+
+enum ForgetBridgeResult: Equatable {
+  case revoked
+  case localOnly
+  case failed(String)
 }
 
 struct VoiceTextValidation: Equatable {
@@ -93,7 +100,9 @@ final class AppModel {
   private(set) var successFeedback = 0
   private(set) var errorFeedback = 0
   private(set) var configuredHost: String
-  private(set) var configuredToken: String
+  private(set) var configuredCredential: BridgeCredential?
+  private(set) var isPairing = false
+  private(set) var isDemoMode = false
   private(set) var voiceState: VoiceState = .notPrepared
   private(set) var partialTranscript = ""
   private(set) var voiceDraft: VoiceDraft?
@@ -112,16 +121,16 @@ final class AppModel {
 
   init(
     configuredHost: String = UserDefaults.standard.string(forKey: "bridgeHost") ?? "",
-    configuredToken: String = TokenStore.load(),
+    configuredCredential: BridgeCredential? = CredentialStore.load(),
     selectedSessionName: String? = UserDefaults.standard.string(forKey: "selectedHerdrSession")
   ) {
     self.configuredHost = configuredHost
-    self.configuredToken = configuredToken
+    self.configuredCredential = configuredCredential
     self.selectedSessionName = selectedSessionName
   }
 
   var hasConfiguration: Bool {
-    !configuredHost.isEmpty && configuredToken.count == 64
+    !configuredHost.isEmpty && configuredCredential != nil
   }
 
   var displayAgents: [BridgeAgent] {
@@ -133,7 +142,7 @@ final class AppModel {
   }
 
   var canSend: Bool {
-    connectionState == .connected
+    (isDemoMode || connectionState == .connected)
       && herdrAvailability == .connected
       && selectedAgent != nil
   }
@@ -144,6 +153,7 @@ final class AppModel {
   }
 
   var connectionLabel: String {
+    if isDemoMode { return "Demo Mode, offline" }
     if connectionState == .connected, selectedSessionName == nil {
       return "No Herdr sessions"
     }
@@ -160,20 +170,91 @@ final class AppModel {
   func start() {
     guard !started else { return }
     started = true
-    guard hasConfiguration else { return }
-    _ = connect(host: configuredHost, token: configuredToken, save: false)
+    guard let configuredCredential, hasConfiguration else { return }
+    _ = connect(host: configuredHost, credential: configuredCredential)
   }
 
   @discardableResult
-  func configure(host: String, token: String) -> Bool {
-    connect(
-      host: host.trimmingCharacters(in: .whitespacesAndNewlines),
-      token: token.trimmingCharacters(in: .whitespacesAndNewlines),
-      save: true
-    )
+  func pair(host: String, code: String, deviceName: String = UIDevice.current.name) async -> Bool {
+    guard !hasConfiguration else {
+      errorMessage = "Forget the current bridge before pairing with another Mac."
+      errorFeedback += 1
+      return false
+    }
+    guard !isPairing else { return false }
+    isPairing = true
+    defer { isPairing = false }
+    let host = host.trimmingCharacters(in: .whitespacesAndNewlines)
+    do {
+      let credential = try await BridgeClient.pair(
+        host: host,
+        code: code,
+        deviceName: deviceName
+      )
+      try CredentialStore.save(credential)
+      UserDefaults.standard.set(host, forKey: "bridgeHost")
+      configuredHost = host
+      configuredCredential = credential
+      return connect(host: host, credential: credential)
+    } catch {
+      report(error)
+      return false
+    }
+  }
+
+  func activateDemoMode() async {
+    await stopClientAndWait()
+    isDemoMode = true
+    connectionState = .connected
+    herdrAvailability = .connected
+    let session = BridgeSession(name: "Offline Demo", isDefault: true)
+    sessions = [session]
+    selectedSessionName = session.name
+    agents = Self.demoAgents
+    agentsBySession = [session.name: agents]
+    availabilityBySession = [session.name: .connected]
+    selectedAgentID = nil
+    errorMessage = nil
+  }
+
+  func forgetBridge() async -> ForgetBridgeResult {
+    let revoked: Bool
+    if !isDemoMode, connectionState == .connected, let client {
+      do {
+        try await client.revokeSelf()
+        revoked = true
+      } catch {
+        revoked = false
+      }
+    } else {
+      revoked = false
+    }
+
+    do {
+      try CredentialStore.delete()
+    } catch {
+      report(error)
+      return .failed(error.localizedDescription)
+    }
+
+    await stopClientAndWait()
+    isDemoMode = false
+    configuredHost = ""
+    configuredCredential = nil
+    UserDefaults.standard.removeObject(forKey: "bridgeHost")
+    UserDefaults.standard.removeObject(forKey: "selectedHerdrSession")
+    resetBridgeState()
+    errorMessage = nil
+    return revoked ? .revoked : .localOnly
   }
 
   func select(_ agent: BridgeAgent) async {
+    if isDemoMode {
+      guard agents.contains(agent) else { return }
+      selectedAgentID = agent.id
+      errorMessage = nil
+      return
+    }
     guard let client, let session = selectedSessionName else {
       report(BridgeError.notConnected)
       return
@@ -196,6 +277,10 @@ final class AppModel {
   }
 
   func send(_ key: RemoteKey) async {
+    if isDemoMode, canSend {
+      successFeedback += 1
+      return
+    }
     guard canSend, let client, let selectedAgentID, let session = selectedSessionName else {
       return
     }
@@ -209,6 +294,10 @@ final class AppModel {
   }
 
   func send(_ action: RemoteAction) async {
+    if isDemoMode, canSendAction {
+      successFeedback += 1
+      return
+    }
     guard canSendAction, let client, let selectedAgentID, let session = selectedSessionName else {
       return
     }
@@ -223,11 +312,15 @@ final class AppModel {
 
   @discardableResult
   func send(text: String, submit: Bool = true) async -> Bool {
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return false }
+    if isDemoMode, canSend {
+      successFeedback += 1
+      return true
+    }
     guard canSend, let client, let selectedAgentID, let session = selectedSessionName else {
       return false
     }
-    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty else { return false }
     return await send(
       text: trimmed, submit: submit, to: selectedAgentID, session: session, client: client)
   }
@@ -237,9 +330,13 @@ final class AppModel {
     let validation = validateVoiceDraftText(text)
     guard validation.isValid,
       draft.matches(
-        agentID: selectedAgentID, session: selectedSessionName, available: canSend),
-      let client
+        agentID: selectedAgentID, session: selectedSessionName, available: canSend)
     else { return false }
+    if isDemoMode {
+      successFeedback += 1
+      return true
+    }
+    guard let client else { return false }
     return await send(
       text: validation.normalizedText,
       submit: true,
@@ -383,16 +480,19 @@ final class AppModel {
         } else if !trimmed.isEmpty,
           canSend,
           selectedAgentID == voiceTarget.agentID,
-          selectedSessionName == voiceTarget.session,
-          let client
+          selectedSessionName == voiceTarget.session
         {
-          _ = await send(
-            text: trimmed,
-            submit: true,
-            to: voiceTarget.agentID,
-            session: voiceTarget.session,
-            client: client
-          )
+          if isDemoMode {
+            successFeedback += 1
+          } else if let client {
+            _ = await send(
+              text: trimmed,
+              submit: true,
+              to: voiceTarget.agentID,
+              session: voiceTarget.session,
+              client: client
+            )
+          }
         }
       }
       guard generation == voiceSessionGeneration else { return }
@@ -433,6 +533,7 @@ final class AppModel {
   }
 
   func apply(_ event: BridgeEvent) {
+    guard !isDemoMode else { return }
     switch event {
     case .connectionState(let state):
       connectionState = state
@@ -466,29 +567,25 @@ final class AppModel {
     }
   }
 
-  private func connect(host: String, token: String, save: Bool) -> Bool {
+  private func connect(host: String, credential: BridgeCredential) -> Bool {
     do {
-      let newClient = try BridgeClient(host: host, token: token)
-      if save {
-        try TokenStore.save(token)
-        UserDefaults.standard.set(host, forKey: "bridgeHost")
-        configuredHost = host
-        configuredToken = token
-      }
+      let newClient = try BridgeClient(host: host, credential: credential)
 
-      eventTask?.cancel()
-      if let client { Task { await client.stop() } }
+      stopClient()
+      isDemoMode = false
       client = newClient
+      let preferredSession = selectedSessionName
+      resetBridgeState()
+      selectedSessionName = preferredSession
       connectionState = .connecting
-      herdrAvailability = .unavailable
-      sessions = []
-      agents = []
-      selectedAgentID = nil
-      agentsBySession = [:]
-      availabilityBySession = [:]
       errorMessage = nil
       eventTask = Task { [weak self, newClient] in
+        guard !Task.isCancelled else { return }
         await newClient.start()
+        guard !Task.isCancelled else {
+          await newClient.stop()
+          return
+        }
         for await event in newClient.events {
           guard !Task.isCancelled else { break }
           self?.apply(event)
@@ -499,6 +596,36 @@ final class AppModel {
       report(error)
       return false
     }
+  }
+
+  private func stopClient() {
+    eventTask?.cancel()
+    eventTask = nil
+    if let client { Task { await client.stop() } }
+    client = nil
+  }
+
+  private func stopClientAndWait() async {
+    let activeTask = eventTask
+    eventTask = nil
+    let activeClient = client
+    client = nil
+    activeTask?.cancel()
+    if let activeClient {
+      await activeClient.stop()
+    }
+    await activeTask?.value
+  }
+
+  private func resetBridgeState() {
+    connectionState = .stopped
+    herdrAvailability = .unavailable
+    sessions = []
+    selectedSessionName = nil
+    agents = []
+    selectedAgentID = nil
+    agentsBySession = [:]
+    availabilityBySession = [:]
   }
 
   private func activateSession(_ name: String?) {
@@ -529,6 +656,24 @@ final class AppModel {
     voiceState = failedState
     voiceTarget = nil
   }
+
+  private static let demoAgents = [
+    BridgeAgent(
+      id: "demo-codex", kind: "codex", name: "Codex", status: .working,
+      title: "Implementing onboarding", workspace: "AgentSlate", cwd: "/Demo/AgentSlate"),
+    BridgeAgent(
+      id: "demo-claude", kind: "claude", name: "Claude", status: .blocked,
+      title: "Approve test command", workspace: "Website", cwd: "/Demo/Website"),
+    BridgeAgent(
+      id: "demo-omp", kind: "omp", name: "OMP", status: .idle,
+      title: "Waiting", workspace: "CLI", cwd: "/Demo/CLI"),
+    BridgeAgent(
+      id: "demo-cursor", kind: "cursor", name: "Cursor", status: .done,
+      title: "Finished review", workspace: "Dashboard", cwd: "/Demo/Dashboard"),
+    BridgeAgent(
+      id: "demo-opencode", kind: "opencode", name: "OpenCode", status: .blocked,
+      title: "Needs input", workspace: "Mobile", cwd: "/Demo/Mobile"),
+  ]
 }
 
 func supportsRemoteActions(for agent: BridgeAgent) -> Bool {
@@ -539,11 +684,11 @@ func supportsRemoteActions(for agent: BridgeAgent) -> Bool {
   }
 }
 
-private enum TokenStore {
-  private static let service = "com.danielou.HerdrRemoteKeypad.bridge"
-  private static let account = "bridge-token"
+private enum CredentialStore {
+  private static let service = "com.danielou.AgentSlate.bridge"
+  private static let account = "bridge-credential"
 
-  static func load() -> String {
+  static func load() -> BridgeCredential? {
     var item: CFTypeRef?
     let status = SecItemCopyMatching(
       [
@@ -555,18 +700,18 @@ private enum TokenStore {
       ] as CFDictionary,
       &item
     )
-    guard status == errSecSuccess, let data = item as? Data else { return "" }
-    return String(decoding: data, as: UTF8.self)
+    guard status == errSecSuccess, let data = item as? Data else { return nil }
+    return try? JSONDecoder().decode(BridgeCredential.self, from: data)
   }
 
-  static func save(_ token: String) throws {
+  static func save(_ credential: BridgeCredential) throws {
     let query =
       [
         kSecClass: kSecClassGenericPassword,
         kSecAttrService: service,
         kSecAttrAccount: account,
       ] as CFDictionary
-    let data = Data(token.utf8)
+    let data = try JSONEncoder().encode(credential)
     let status = SecItemUpdate(query, [kSecValueData: data] as CFDictionary)
     if status == errSecSuccess { return }
     guard status == errSecItemNotFound else { throw keychainError(status) }
@@ -582,6 +727,19 @@ private enum TokenStore {
       nil
     )
     guard addStatus == errSecSuccess else { throw keychainError(addStatus) }
+  }
+
+  static func delete() throws {
+    let status = SecItemDelete(
+      [
+        kSecClass: kSecClassGenericPassword,
+        kSecAttrService: service,
+        kSecAttrAccount: account,
+      ] as CFDictionary
+    )
+    guard status == errSecSuccess || status == errSecItemNotFound else {
+      throw keychainError(status)
+    }
   }
 
   private static func keychainError(_ status: OSStatus) -> NSError {

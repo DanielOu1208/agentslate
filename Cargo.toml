@@ -1,11 +1,17 @@
 [package]
-name = "herdr-remote-keypad"
+name = "agentslate"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
-description = "Tailscale-only remote keypad bridge for Herdr agents"
+description = "Tailscale-only iPhone remote control bridge for Herdr"
+license = "MIT"
+repository = "https://github.com/DanielOu1208/agentslate"
+homepage = "https://danielou1208.github.io/agentslate/"
+publish = false
 
 [dependencies]
+fs2 = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
