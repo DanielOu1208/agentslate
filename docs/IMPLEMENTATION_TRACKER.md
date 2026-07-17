@@ -165,6 +165,7 @@ Exit criterion: the external TestFlight build is approved and installed, public 
 | 2026-07-16 | Keep pairing manual instead of adding QR setup | A six-digit code and Tailscale address cover the beta without a camera flow or another dependency |
 | 2026-07-16 | Stop the release workflow after external TestFlight | Production App Store review and release require a separate explicit owner decision after beta feedback |
 | 2026-07-16 | Pause publication after refreshing the AgentSlate name search | Another developer recently announced an AgentSlate product in the coding-agent category, so the private release candidate stays unpublished until the owner chooses a different name or obtains independent clearance |
+| 2026-07-16 | Proceed with AgentSlate and reuse the unpublished App Store Connect record | The owner explicitly accepted the naming conflict; retaining the existing internal bundle ID avoids an unnecessary second Apple record while every visible product surface uses AgentSlate |
 
 ## Verification evidence
 

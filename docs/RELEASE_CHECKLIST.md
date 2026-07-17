@@ -7,7 +7,7 @@ The project owner has authorized preparation and publication of the open-source 
 - Product and App Store name: `AgentSlate`
 - Subtitle: `Remote control for Herdr`
 - Version: `0.1.0`
-- Bundle ID: `com.danielou.AgentSlate`
+- Bundle ID: `com.danielou.HerdrRemoteKeypad` (retained internally to reuse the unpublished App Store Connect record)
 - Repository: `DanielOu1208/agentslate`
 - Homebrew tap: `DanielOu1208/homebrew-agentslate`
 - Primary category: Developer Tools
@@ -20,7 +20,7 @@ The project owner has authorized preparation and publication of the open-source 
 Before any public release:
 
 - [ ] Complete formal trademark clearance for `AgentSlate`.
-- [ ] Resolve the July 16, 2026 name-search conflict with another recently announced coding-agent product called AgentSlate before reserving names or publishing.
+- [x] Project owner reviewed the July 16, 2026 AgentSlate name-search conflict and explicitly chose to proceed with the name.
 - [x] Project owner confirmed authorization to bundle the Factory Droid and Herdr marks; preserve the permission records with the release records.
 - [ ] Confirm the App Store Connect name can be reserved.
 - [x] Record the owner's approval to publish the open-source repository, Homebrew release, and external TestFlight beta.
@@ -41,7 +41,7 @@ Do not publish to crates.io, attach binary downloads, create bottles, notarize a
 
 Local release gates passed on July 16, 2026: Rust/Swift/iOS tests, static analysis, unsigned archive, App Store Connect–signed IPA export, privacy/notices/icon inspection, clean CLI source install, live Tailscale/Herdr doctor, and simulator onboarding/Demo Mode/settings review. Physical-iPhone acceptance and the hosted CI run remain open.
 
-Publication is paused because a refreshed public search found a recently announced coding-agent memory product already using the exact name AgentSlate. The existing GitHub repository remains private while the owner chooses whether to rename this project or proceed after independent clearance.
+The owner chose to proceed with AgentSlate after reviewing the same-category naming conflict. Formal trademark clearance remains an independent owner responsibility.
 
 ## TestFlight metadata
 
@@ -69,7 +69,7 @@ Publication is paused because a refreshed public search found a recently announc
 
 ### TestFlight steps
 
-- [ ] Create the App Store Connect app record and bundle ID.
+- [ ] Rename and reuse the unpublished Herdr Remote Keypad App Store Connect record and its existing bundle ID.
 - [ ] Upload a verified `0.1.0` build with a new, monotonically increasing build number.
 - [ ] Complete export compliance, privacy, beta description, feedback, and review fields.
 - [ ] Create the required internal testing group.
