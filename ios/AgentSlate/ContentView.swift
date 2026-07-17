@@ -1049,9 +1049,6 @@ private struct RemoteActionButton: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     .buttonStyle(TactileKeyStyle())
-    .disabled(!enabled)
-    .opacity(enabled ? 1 : 0.5)
-    .animation(.easeOut(duration: 0.18), value: enabled)
     .accessibilityLabel(action == .accept ? "Accept" : "Deny")
     .accessibilityHint(
       enabled
