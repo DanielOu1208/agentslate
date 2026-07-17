@@ -118,6 +118,7 @@ func voiceTargetsUseTheirDisplayedRectangles() {
   )
 
   #expect(frames.cancel.size == frames.edit.size)
+  #expect(frames.cancel.maxY + 12 + 82 + VoiceTargetLayout.bottomPadding == 844)
   #expect(
     VoiceReleaseAction.classify(
       CGPoint(x: frames.cancel.midX, y: frames.cancel.midY),

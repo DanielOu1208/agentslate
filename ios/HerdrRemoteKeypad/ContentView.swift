@@ -5,6 +5,7 @@ struct ContentView: View {
   @Environment(\.scenePhase) private var scenePhase
   @State private var model = AppModel()
   @State private var showingSettings = false
+  @State private var agentSelectionFeedback = 0
   @State private var placeholderFeedback = 0
   @State private var armedVoiceAction = VoiceReleaseAction.send
   @State private var voiceSelectionFeedback = 0
@@ -30,7 +31,10 @@ struct ContentView: View {
               selectedAgentID: model.selectedAgentID,
               cell: cell,
               gap: gap,
-              select: { agent in Task { await model.select(agent) } },
+              select: { agent in
+                agentSelectionFeedback += 1
+                Task { await model.select(agent) }
+              },
               tapPlaceholder: tapPlaceholder
             )
 
@@ -58,7 +62,7 @@ struct ContentView: View {
         .accessibilityHidden(talking)
 
         if talking {
-          Color.black.opacity(0.24)
+          Color.black.opacity(0.40)
             .ignoresSafeArea()
             .allowsHitTesting(false)
 
@@ -67,7 +71,8 @@ struct ContentView: View {
             transcript: model.partialTranscript,
             action: armedVoiceAction,
             targets: targets,
-            contentWidth: width
+            contentWidth: width,
+            gap: gap
           )
           .allowsHitTesting(false)
         }
@@ -94,7 +99,7 @@ struct ContentView: View {
             armVoice: armVoice
           )
           .frame(width: cell * 2 + gap, height: cell)
-          .padding(.bottom, 20)
+          .padding(.bottom, VoiceTargetLayout.bottomPadding)
         }
       }
       .coordinateSpace(name: VoiceTargetLayout.coordinateSpace)
@@ -102,6 +107,7 @@ struct ContentView: View {
     .tint(Palette.blue)
     .sensoryFeedback(.success, trigger: model.successFeedback)
     .sensoryFeedback(.error, trigger: model.errorFeedback)
+    .sensoryFeedback(.selection, trigger: agentSelectionFeedback)
     .sensoryFeedback(.impact(weight: .medium), trigger: placeholderFeedback)
     .sensoryFeedback(.selection, trigger: voiceSelectionFeedback)
     .sheet(isPresented: $showingSettings) {
@@ -513,8 +519,10 @@ private struct ControlBank: View {
 
   private var showsVoiceStatus: Bool {
     switch voiceState {
-    case .preparing, .starting, .listening, .finalizing, .failed:
+    case .preparing, .finalizing, .failed:
       true
+    case .starting, .listening:
+      false
     case .notPrepared, .ready:
       !partialTranscript.isEmpty
     }
@@ -672,6 +680,7 @@ struct VoiceTargetFrames: Equatable {
 
 enum VoiceTargetLayout {
   static let coordinateSpace = "voiceInteraction"
+  static let bottomPadding: CGFloat = 20
 
   static func frames(
     in size: CGSize,
@@ -681,9 +690,10 @@ enum VoiceTargetLayout {
   ) -> VoiceTargetFrames {
     let width = (contentWidth - gap) / 2
     let left = (size.width - contentWidth) / 2
+    let top = size.height - bottomPadding - targetHeight * 2 - gap
     return VoiceTargetFrames(
-      cancel: CGRect(x: left, y: 8, width: width, height: targetHeight),
-      edit: CGRect(x: left + width + gap, y: 8, width: width, height: targetHeight)
+      cancel: CGRect(x: left, y: top, width: width, height: targetHeight),
+      edit: CGRect(x: left + width + gap, y: top, width: width, height: targetHeight)
     )
   }
 }
@@ -694,12 +704,16 @@ private struct TalkingPresentation: View {
   let action: VoiceReleaseAction
   let targets: VoiceTargetFrames
   let contentWidth: CGFloat
+  let gap: CGFloat
 
   var body: some View {
     GeometryReader { geometry in
-      ZStack {
-        TalkingBorder(action: action)
+      let transcriptHeight = min(
+        max(120, geometry.size.height * 0.42),
+        max(0, targets.cancel.minY - gap)
+      )
 
+      ZStack {
         VoiceReleaseTarget(action: .cancel, armed: action == .cancel)
           .frame(width: targets.cancel.width, height: targets.cancel.height)
           .position(x: targets.cancel.midX, y: targets.cancel.midY)
@@ -711,10 +725,10 @@ private struct TalkingPresentation: View {
         VoiceTranscript(
           text: displayedTranscript
         )
-        .frame(width: contentWidth, height: max(120, geometry.size.height * 0.42))
+        .frame(width: contentWidth, height: transcriptHeight)
         .position(
           x: geometry.size.width / 2,
-          y: targets.cancel.maxY + max(120, geometry.size.height * 0.42) / 2 + 12
+          y: targets.cancel.minY - transcriptHeight / 2 - gap
         )
       }
     }
@@ -731,26 +745,29 @@ private struct VoiceReleaseTarget: View {
   let armed: Bool
 
   var body: some View {
-    VStack(spacing: 7) {
-      Image(systemName: action == .cancel ? "xmark" : "pencil")
-        .font(.system(size: 28, weight: .bold))
-      Text(action == .cancel ? "Cancel" : "Edit")
-        .font(.headline)
+    ZStack {
+      TactileKeyChrome(isPressed: armed, showsDish: false)
+        .colorMultiply(action == .cancel ? Palette.blocked : .white)
+
+      VStack(spacing: 7) {
+        Image(systemName: action == .cancel ? "xmark" : "pencil")
+          .font(.system(size: 28, weight: .semibold))
+        Text(action == .cancel ? "Cancel" : "Edit")
+          .font(.headline)
+      }
+      .foregroundStyle(foregroundColor)
     }
-    .foregroundStyle(.white)
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(color.opacity(armed ? 0.95 : 0.68), in: RoundedRectangle(cornerRadius: 21))
-    .overlay {
-      RoundedRectangle(cornerRadius: 21)
-        .stroke(.white.opacity(armed ? 0.95 : 0.45), lineWidth: armed ? 3 : 1)
-    }
-    .scaleEffect(armed ? 1.03 : 1)
     .animation(.easeOut(duration: 0.12), value: armed)
     .accessibilityHidden(true)
   }
 
   private var color: Color {
     action == .cancel ? Palette.blocked : Palette.blueHighlight
+  }
+
+  private var foregroundColor: Color {
+    if action == .cancel { return .white }
+    return armed ? color : Palette.buttonIcon
   }
 }
 
@@ -761,7 +778,7 @@ private struct VoiceTranscript: View {
     ScrollViewReader { proxy in
       ScrollView {
         Text(text)
-          .font(.system(.largeTitle, design: .rounded, weight: .semibold))
+          .font(.title2)
           .foregroundStyle(.white)
           .multilineTextAlignment(.center)
           .frame(maxWidth: .infinity)
@@ -779,39 +796,11 @@ private struct VoiceTranscript: View {
   }
 }
 
-private struct TalkingBorder: View {
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-  let action: VoiceReleaseAction
-
-  var body: some View {
-    RoundedRectangle(cornerRadius: 28)
-      .inset(by: 4)
-      .stroke(color, lineWidth: 4)
-      .shadow(color: color.opacity(0.85), radius: 14)
-      .phaseAnimator(reduceMotion ? [false] : [false, true]) { border, bright in
-        border.opacity(bright ? 1 : 0.58)
-      } animation: { _ in
-        .easeInOut(duration: 0.6)
-      }
-      .padding(4)
-      .ignoresSafeArea()
-      .accessibilityHidden(true)
-  }
-
-  private var color: Color {
-    switch action {
-    case .send: Palette.blue
-    case .cancel: Palette.blocked
-    case .edit: Color(red: 0.35, green: 0.65, blue: 1)
-    }
-  }
-}
-
 /// Shared tactile chrome for keys that are not Button-based (hold-to-talk).
 private struct TactileKeyChrome: View {
   var isPressed: Bool
   var primary = false
+  var showsDish = true
 
   var body: some View {
     ZStack {
@@ -832,8 +821,10 @@ private struct TactileKeyChrome: View {
           )
         RoundedRectangle(cornerRadius: 21, style: .continuous)
           .stroke(primary ? .white.opacity(0.28) : .white.opacity(0.95), lineWidth: 1)
-        KeyDish(primary: primary)
-          .frame(width: keyDishDiameter, height: keyDishDiameter)
+        if showsDish {
+          KeyDish(primary: primary)
+            .frame(width: keyDishDiameter, height: keyDishDiameter)
+        }
       }
       .offset(y: isPressed ? 3 : 0)
     }
@@ -1041,18 +1032,21 @@ private struct RemoteActionButton: View {
   let send: (RemoteAction) -> Void
 
   var body: some View {
-    Button { send(action) } label: {
+    Button {
+      if enabled { send(action) }
+    } label: {
       Image(systemName: action == .accept ? "checkmark" : "xmark")
         .font(.system(size: 30, weight: .medium))
         .foregroundStyle(Palette.buttonIcon)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     .buttonStyle(TactileKeyStyle())
-    .disabled(!enabled)
-    .opacity(enabled ? 1 : 0.5)
-    .animation(.easeOut(duration: 0.18), value: enabled)
     .accessibilityLabel(action == .accept ? "Accept" : "Deny")
-    .accessibilityHint("Sends the selected agent's default shortcut.")
+    .accessibilityHint(
+      enabled
+        ? "Sends the selected agent's default shortcut."
+        : "No approval request is currently available."
+    )
   }
 }
 
