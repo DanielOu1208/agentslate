@@ -2,6 +2,8 @@
 
 The project owner has authorized preparation and publication of the open-source repository, Homebrew release, and external TestFlight beta. Production App Store submission and release remain explicitly out of scope.
 
+The optional cloud-dictation work added on July 18, 2026 is local-device testing work only. Do not upload or submit a build containing it until the owner gives separate approval after physical-iPhone acceptance.
+
 ## Release identity
 
 - Product and App Store name: `AgentSlate`
@@ -50,7 +52,7 @@ The owner chose to proceed with AgentSlate after reviewing the same-category nam
 
 - Beta app description:
 
-  > AgentSlate is an iPhone remote control for coding agents running in Herdr on your Mac. Pair over Tailscale, select a visible agent, and send common keys, short text, or on-device dictation. This beta includes an offline Demo Mode.
+  > AgentSlate is an iPhone remote control for coding agents running in Herdr on your Mac. Pair over Tailscale, select a visible agent, and send common keys, short text, or voice dictation. Apple on-device dictation is the default; optional cloud dictation uses an OpenRouter key supplied by the tester. This beta includes an offline Demo Mode.
 
 - Feedback email: temporarily use the email attached to the Apple developer account.
 - Privacy policy URL: `https://danielou1208.github.io/agentslate/privacy/`
@@ -62,11 +64,11 @@ The owner chose to proceed with AgentSlate after reviewing the same-category nam
 - Sign-in required: No.
 - Review notes:
 
-  > AgentSlate normally connects to a Mac running Herdr over Tailscale. No account is required. For review without a Mac, open Demo Mode from onboarding; Demo Mode uses fixed sample agents and never makes a network connection. To test a real bridge, install the linked Homebrew formula on a Mac with Herdr and Tailscale, run `brew services start agentslate`, then run `agentslate pair` and enter the Mac's Tailscale address and six-digit code in the app. Microphone permission is used only for on-device dictation.
+  > AgentSlate normally connects to a Mac running Herdr over Tailscale. No AgentSlate account is required. For review without a Mac, open Demo Mode from onboarding; Demo Mode uses fixed sample agents and never makes a bridge connection. To test a real bridge, install the linked Homebrew formula on a Mac with Herdr and Tailscale, run `brew services start agentslate`, then run `agentslate pair` and enter the Mac's Tailscale address and six-digit code in the app. Microphone permission supports Apple on-device dictation by default. Optional Cloud Dictation must be explicitly enabled and requires one tester-supplied OpenRouter API key.
 
 - What to test:
 
-  > Please test onboarding and Demo Mode, session and agent selection, control labels and VoiceOver, reconnect behavior, on-device dictation, Forget Bridge, watched-screen Accept/Deny gating for blocked agents, and that Accept/Deny stay visually available but do nothing when no supported blocked prompt is selected.
+  > Please test onboarding and Demo Mode, session and agent selection, control labels and VoiceOver, reconnect behavior, Apple and optional cloud dictation, automatic fallback, Forget Bridge, watched-screen Accept/Deny gating for blocked agents, and that Accept/Deny stay visually available but do nothing when no supported blocked prompt is selected.
 
 ### TestFlight steps
 
@@ -90,9 +92,9 @@ Build `0.1.0 (4)` entered `Waiting for Review` on July 16, 2026. The public link
 
 > AgentSlate is a focused iPhone remote control for developers supervising coding agents in Herdr on a Mac.
 >
-> See live Herdr sessions and agents, focus the agent you are watching, and send common navigation keys or short instructions without reaching for the desktop keyboard. Hold Voice to dictate on-device, then send, cancel, or review the text before it leaves your phone.
+> See live Herdr sessions and agents, focus the agent you are watching, and send common navigation keys or short instructions without reaching for the desktop keyboard. Hold Voice to dictate with Apple's on-device speech framework by default, or opt into a user-funded cloud pipeline, then send, cancel, or review the text.
 >
-> AgentSlate connects directly over your private Tailscale network. It has no AgentSlate account, cloud backend, analytics, advertising, or tracking. Each iPhone pairs with a short-lived code and receives its own revocable credential.
+> AgentSlate connects directly over your private Tailscale network. It has no AgentSlate account, developer-operated cloud backend, analytics, advertising, or tracking. Optional cloud dictation connects to OpenRouter using an API key supplied by the user; OpenRouter routes transcription to Groq and cleanup to Google. Each iPhone pairs with a short-lived code and receives its own revocable credential.
 >
 > A Mac running Herdr, Tailscale, and the free open-source AgentSlate bridge is required for live use. Offline Demo Mode is included.
 >
@@ -102,7 +104,7 @@ Build `0.1.0 (4)` entered `Waiting for Review` on July 16, 2026. The public link
 - Support URL: `https://danielou1208.github.io/agentslate/support/`
 - Marketing URL: `https://danielou1208.github.io/agentslate/`
 - Privacy policy URL: `https://danielou1208.github.io/agentslate/privacy/`
-- App privacy: Data Not Collected
+- App privacy: Reassess before the next upload; optional cloud dictation may require Audio Data and User Content disclosures even though processing uses user-supplied accounts.
 - Tracking: No
 - Encryption declaration: `ITSAppUsesNonExemptEncryption=NO`
 - EU Digital Services Act: Non-trader
@@ -115,13 +117,14 @@ Prepare three screenshots without real names, workspaces, prompts, IP addresses,
 
 1. **See every agent at a glance** — live dashboard with multiple sample states and a selected agent.
 2. **Control the agent you are watching** — keypad, session picker, and clearly identified target.
-3. **Speak, review, and send privately** — on-device dictation review or the offline Demo Mode.
+3. **Choose how you dictate** — Apple on-device speech, optional user-funded cloud dictation, or the offline Demo Mode.
 
 Verify legibility, no placeholder status-bar artifacts, and consistent 6.9-inch dimensions before upload.
 
 ### Production draft stop
 
 - [ ] Fill in all production metadata and upload the three screenshots.
+- [ ] Update App Store privacy answers and review `PrivacyInfo.xcprivacy` for optional cloud audio and transcript processing.
 - [ ] Select the verified build only when preparing the draft for owner review.
 - [ ] Leave version `0.1.0` in **Prepare for Submission**.
 - [ ] Do not click **Add for Review**, **Submit for Review**, or any production release action.

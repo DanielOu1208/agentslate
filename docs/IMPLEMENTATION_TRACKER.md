@@ -1,6 +1,6 @@
 # AgentSlate Implementation Tracker
 
-Last updated: 2026-07-16
+Last updated: 2026-07-18
 Allowed states: `Not started`, `In progress`, `Blocked`, `Done`
 
 A task is `Done` only when its acceptance evidence is recorded here. A phase is `Done` only when every exit criterion passes.
@@ -12,7 +12,7 @@ A task is `Done` only when its acceptance evidence is recorded here. A phase is 
 | 0. Herdr API validation | Done | Disposable prompt controlled through the bridge |
 | 1. Rust connector vertical slice | Done | Local and Tailscale acceptance checks passed |
 | 2. SwiftUI dashboard and keypad | In progress | SwiftUI dashboard and keypad simulator-verified; physical iPhone acceptance pending |
-| 3. Typed and voice interaction | In progress | Send/Cancel/Edit voice flow and review editor are automated-test verified; full simulator visual and physical speech acceptance remain open |
+| 3. Typed and voice interaction | In progress | Apple and optional cloud dictation pipelines are automated-test verified; full physical speech and fallback acceptance remain open |
 | 4. Pairing and lifecycle | In progress | Protocol v3 Mac and Swift foundations implemented; iPhone onboarding/Forget Bridge acceptance pending |
 | 5. Hardening | Not started | Starts after daily-use validation |
 | 6. Release staging | In progress | External build `0.1.0 (4)` is waiting for TestFlight review; its uncapped public link activates after approval, while production remains an unsubmitted draft |
@@ -87,8 +87,11 @@ Exit criterion: command approvals and question pickers can be completed from the
 - [x] Add hold-to-talk, partial transcription, release-to-send, visible drag-to-Cancel/Edit targets, and cancellation.
 - [x] Add review-before-send with automatic Enter.
 - [x] Preserve partial transcription when recognition fails.
+- [x] Add optional user-funded OpenRouter transcription and cleanup with one credential stored in Keychain.
+- [x] Add automatic Apple file-transcription fallback, raw-transcript cleanup fallback, and raw-text recovery in Edit.
+- [ ] Verify cloud transcription, cleanup, two-minute cutoff, Apple fallback, key removal, and interruption handling on a physical iPhone.
 
-Exit criterion: typed and spoken instructions reach the selected agent without streaming audio off the phone.
+Exit criterion: typed and spoken instructions reach the selected agent through the chosen dictation mode, with explicit cloud opt-in and reliable fallbacks.
 
 ## Phase 4: Pairing and lifecycle
 
@@ -171,6 +174,9 @@ Exit criterion: the external TestFlight build is approved and installed, public 
 | 2026-07-16 | Use an uncapped public link for `AgentSlate Beta` | The owner requested worldwide public testing with no tester limit; Apple keeps the link closed until build `0.1.0 (4)` passes Beta App Review |
 | 2026-07-16 | Pause publication after refreshing the AgentSlate name search | Another developer recently announced an AgentSlate product in the coding-agent category, so the private release candidate stays unpublished until the owner chooses a different name or obtains independent clearance |
 | 2026-07-16 | Proceed with AgentSlate and reuse the unpublished App Store Connect record | The owner explicitly accepted the naming conflict; retaining the existing internal bundle ID avoids an unnecessary second Apple record while every visible product surface uses AgentSlate |
+| 2026-07-18 | Keep Apple dictation as the default and add an optional user-funded cloud pipeline | One user-supplied OpenRouter key avoids developer-funded compute; explicit opt-in preserves an on-device path and makes cloud data transfer visible |
+| 2026-07-18 | Use OpenRouter for Groq-hosted Whisper Turbo and Gemini Flash Lite cleanup, with automatic degradation | One credential covers both requests; transcription falls back to Apple's local file path, cleanup falls back to raw text, and no provider failure discards a usable transcript |
+| 2026-07-18 | Keep cloud dictation changes local until physical-device acceptance | The owner will build from Xcode and explicitly prohibited a TestFlight upload or submission for this work |
 
 ## Verification evidence
 
@@ -207,3 +213,4 @@ Exit criterion: the external TestFlight build is approved and installed, public 
 | 2026-07-16 | Voice gesture physical-iPhone acceptance | Pending | `devicectl` found no connected iPhone. Normal Send, Cancel sending nothing, Edit finalization, haptics, drag reach, blur/glow performance, connection loss, keyboard layout, and VoiceOver actions remain device acceptance work. |
 | 2026-07-16 | AgentSlate 0.1.0 integrated release gates | Automated pass; physical device and publication pending | `cargo fmt`, strict locked Clippy, 12 Rust tests, locked release build, 21 Swift package tests, 11 iOS simulator tests, Xcode static analysis, unsigned archive, signed App Store Connect IPA export, manifest/notices/icon inspection, clean source install, live Tailscale/Herdr doctor, and simulator onboarding/demo/settings/acknowledgements review passed. The unavailable paired iPhone prevents the physical acceptance pass. |
 | 2026-07-16 | External TestFlight submission | Waiting for Review | Verified build `0.1.0 (4)` is attached to `AgentSlate Beta` with the updated Accept/Deny test notes. The open-to-anyone public link has no tester limit and will accept testers only after Apple approves the build. Production version `0.1.0` remains in Prepare for Submission. |
+| 2026-07-18 | Optional cloud dictation implementation | Automated pass; physical device pending | The iPhone 17e simulator build and all 15 app tests passed. Request tests verify OpenRouter Whisper Turbo transcription, Gemini Flash Lite cleanup, transcript-only context, zero-data-retention routing, the single credential requirement, and raw cleanup fallback. No build was uploaded or submitted. |

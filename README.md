@@ -29,11 +29,11 @@ The terminal stays on the Mac. The phone shows agent status and acts as the cont
 - **Live agent dashboard** — see Herdr sessions, workspaces, and agent states, with blocked agents brought forward.
 - **Focused remote controls** — send arrows, Enter, Escape, Tab, Shift+Tab, Space, or short text to the selected agent.
 - **Watched-screen actions** — use Accept and Deny shortcuts only when a supported agent is visibly blocked.
-- **Private voice input** — Apple's on-device transcription runs on the iPhone; only the resulting text is sent.
+- **Choose your voice pipeline** — use Apple's on-device transcription by default, or opt into OpenRouter-routed Whisper transcription and cleanup with automatic Apple fallback.
 - **Direct and private** — connect over Tailscale with a single-use pairing code and a revocable per-device credential.
 - **Offline Demo Mode** — explore the complete keypad with fixed sample agents and no bridge connection.
 
-AgentSlate does not stream terminal output, provide a general shell API, use analytics, or require a cloud account. It can still type into a terminal, so treat every key as if you pressed it on the Mac.
+AgentSlate does not stream terminal output, provide a general shell API, use analytics, or require a cloud account. Optional cloud dictation uses an OpenRouter API key that you supply and stores it in the iOS Keychain. It can still type into a terminal, so treat every key as if you pressed it on the Mac.
 
 ## How it works
 
@@ -41,6 +41,8 @@ AgentSlate does not stream terminal output, provide a general shell API, use ana
 2. The iPhone pairs directly with the bridge over your private Tailscale network.
 3. Tapping an agent focuses its existing Herdr pane.
 4. Key presses, approval shortcuts, and dictated text go only to the selected agent.
+
+Voice input uses Apple's on-device speech recognition unless you explicitly enable Cloud Dictation in Settings. Cloud Dictation sends a temporary audio recording to OpenRouter's Whisper Large V3 Turbo endpoint, currently served by Groq, then sends only that transcript through OpenRouter for cleanup. If cloud transcription fails, the app retries the recording with Apple's on-device speech framework; if cleanup fails, it uses the raw transcript.
 
 ## Requirements
 

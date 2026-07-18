@@ -63,7 +63,7 @@ The first phone build adds:
 
 ### Open beta
 
-The open beta additionally includes editable spoken instructions, hold-to-talk local speech recognition, secure device pairing and revocation, Homebrew service packaging, support/privacy pages, and an external TestFlight build. It is complete when an iPhone can select among at least three agents, operate approvals and pickers, review and send spoken instructions, reconnect, and reject unauthenticated or revoked devices.
+The open beta additionally includes editable spoken instructions, hold-to-talk speech recognition with an Apple on-device default and optional user-funded cloud pipeline, secure device pairing and revocation, Homebrew service packaging, support/privacy pages, and an external TestFlight build. It is complete when an iPhone can select among at least three agents, operate approvals and pickers, review and send spoken instructions, reconnect, and reject unauthenticated or revoked devices.
 
 ## Functional requirements
 
@@ -92,17 +92,21 @@ The open beta additionally includes editable spoken instructions, hold-to-talk l
 
 ### Voice and speech
 
-- Use Apple's on-device SpeechAnalyzer and DictationTranscriber (iOS 26+) for hold-to-talk dictation.
+- Default to Apple's on-device SpeechAnalyzer and DictationTranscriber (iOS 26+) for hold-to-talk dictation.
+- Let users explicitly opt into cloud dictation by saving one OpenRouter API key in the iOS Keychain; never bundle a developer-funded credential.
+- In cloud mode, record a temporary WAV file, transcribe it through OpenRouter with `openai/whisper-large-v3-turbo` (currently served by Groq), and clean only the returned transcript with `google/gemini-3.1-flash-lite`.
+- If OpenRouter transcription fails, retry the same recording with Apple's on-device speech framework. If cleanup fails or returns invalid text, keep the raw transcript.
+- Do not show partial cloud text. Show clear listening, transcribing, and cleaning states, and cap cloud recording at two minutes before opening the review editor.
 - Default to hold, speak, and release to send text plus Enter through the existing bridge `send_text` path.
 - While holding, show only two visible alternate release targets: upper-left Cancel discards and upper-right Edit finalizes into an in-memory review sheet. Leaving either target restores Send.
-- Keep the microphone sharp and interactive while the blocked keypad is blurred and dimmed; show live, auto-scrolling transcript text and an outcome-colored border that respects Reduce Motion.
+- Keep the microphone sharp and interactive while the blocked keypad is blurred and dimmed; show live, auto-scrolling transcript text in Apple mode, a listening state in cloud mode, and an outcome-colored border that respects Reduce Motion.
 - Let the review sheet edit multi-line text, convert line breaks to spaces, reject blank/control-character/over-8,192-byte input, and retain failed or disconnected drafts for retry.
 - Bind an Edit draft to the agent and session captured when recording began; send only while that exact target remains selected and available.
 - Prepare speech after saved bridge setup is available so the first press does not perform model setup.
 - Request microphone access with the native asynchronous audio API; do not request the legacy speech-recognition permission.
 - Cancel capture when the gesture is interrupted or the app leaves the foreground, and never send partial text after a recognition or finalization failure.
 - With VoiceOver, use one activation to start, a second to send, and named Edit dictation and Cancel dictation actions while keeping the same talking presentation.
-- Keep audio on the phone; never stream microphone audio through the Herdr bridge.
+- Never stream microphone audio through the Herdr bridge. Keep audio on the phone in Apple mode; in opted-in cloud mode, send the temporary recording to OpenRouter for Groq-hosted transcription and delete the local file after processing.
 - Keep text-to-speech out of the initial keypad release because the external screen remains the source of context.
 
 ### Connection and security
@@ -153,6 +157,6 @@ The open beta additionally includes editable spoken instructions, hold-to-talk l
 - The shared Swift package targets iOS 18 and newer.
 - The iPhone app targets iOS 26 and newer so it can use SpeechAnalyzer for on-device dictation.
 - Dedicated Accept and Deny keys are watched-screen default-keymap conveniences for five supported agent kinds; they are not structured authorization and remain disabled unless the selected agent is blocked.
-- The Voice key uses on-device hold-to-talk dictation with Send, Cancel, and editable review outcomes; finalized sends reuse the existing bridge text route.
+- The Voice key uses Apple on-device hold-to-talk dictation by default, with an optional user-funded OpenRouter pipeline, automatic Apple/raw-text fallbacks, and the same Send, Cancel, and editable review outcomes. Finalized sends reuse the existing bridge text route.
 - Demo Mode is an offline review path with fixed sample data, not a simulated connection to the real bridge.
 - Version 0.1.0 stops at external TestFlight. Production App Store metadata may be prepared, but production review and release require separate explicit approval.

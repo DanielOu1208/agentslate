@@ -11,6 +11,8 @@ enum VoiceState: Equatable {
   case starting
   case listening
   case finalizing
+  case transcribing
+  case cleaning
   case failed(String)
 }
 
@@ -31,6 +33,7 @@ enum VoiceReleaseAction: Equatable {
 struct VoiceDraft: Identifiable, Equatable {
   let id = UUID()
   let text: String
+  let rawText: String
   let agentID: String
   let agentName: String
   let session: String
@@ -106,12 +109,16 @@ final class AppModel {
   private(set) var voiceState: VoiceState = .notPrepared
   private(set) var partialTranscript = ""
   private(set) var voiceDraft: VoiceDraft?
+  private(set) var dictationCredentials: DictationCredentials?
+  private(set) var cloudDictationEnabled: Bool
 
   @ObservationIgnored private var client: BridgeClient?
   @ObservationIgnored private var eventTask: Task<Void, Never>?
   @ObservationIgnored private var started = false
   @ObservationIgnored private let dictation = VoiceDictationController()
   @ObservationIgnored private var voiceStartTask: Task<Void, Never>?
+  @ObservationIgnored private var voiceProcessingTask: Task<DictationResult, any Error>?
+  @ObservationIgnored private var voiceDurationTask: Task<Void, Never>?
   @ObservationIgnored private var voiceEndInProgress = false
   @ObservationIgnored private var voiceCancelInProgress = false
   @ObservationIgnored private var voiceSessionGeneration = 0
@@ -121,16 +128,32 @@ final class AppModel {
 
   init(
     configuredHost: String = UserDefaults.standard.string(forKey: "bridgeHost") ?? "",
-    configuredCredential: BridgeCredential? = CredentialStore.load(),
-    selectedSessionName: String? = UserDefaults.standard.string(forKey: "selectedHerdrSession")
+    configuredCredential: BridgeCredential? = KeychainStore.loadBridge(),
+    selectedSessionName: String? = UserDefaults.standard.string(forKey: "selectedHerdrSession"),
+    dictationCredentials: DictationCredentials? = KeychainStore.loadDictation(),
+    cloudDictationEnabled: Bool = UserDefaults.standard.bool(forKey: "cloudDictationEnabled")
   ) {
     self.configuredHost = configuredHost
     self.configuredCredential = configuredCredential
     self.selectedSessionName = selectedSessionName
+    self.dictationCredentials = dictationCredentials
+    self.cloudDictationEnabled =
+      cloudDictationEnabled && (dictationCredentials?.isComplete == true)
   }
 
   var hasConfiguration: Bool {
     !configuredHost.isEmpty && configuredCredential != nil
+  }
+
+  var hasDictationCredentials: Bool {
+    dictationCredentials?.isComplete == true
+  }
+
+  var dictationMode: DictationMode {
+    if cloudDictationEnabled, let dictationCredentials, dictationCredentials.isComplete {
+      return .cloud(dictationCredentials)
+    }
+    return .apple
   }
 
   var displayAgents: [BridgeAgent] {
@@ -191,7 +214,7 @@ final class AppModel {
         code: code,
         deviceName: deviceName
       )
-      try CredentialStore.save(credential)
+      try KeychainStore.saveBridge(credential)
       UserDefaults.standard.set(host, forKey: "bridgeHost")
       configuredHost = host
       configuredCredential = credential
@@ -231,7 +254,7 @@ final class AppModel {
     }
 
     do {
-      try CredentialStore.delete()
+      try KeychainStore.deleteBridge()
     } catch {
       report(error)
       return .failed(error.localizedDescription)
@@ -350,6 +373,41 @@ final class AppModel {
     voiceDraft = nil
   }
 
+  @discardableResult
+  func saveDictationCredentials(openRouterAPIKey: String) -> Bool {
+    let credentials = DictationCredentials(openRouterAPIKey: openRouterAPIKey)
+    guard credentials.isComplete else { return false }
+    do {
+      try KeychainStore.saveDictation(credentials)
+      dictationCredentials = credentials
+      errorMessage = nil
+      return true
+    } catch {
+      report(error)
+      return false
+    }
+  }
+
+  func setCloudDictationEnabled(_ enabled: Bool) async {
+    guard !enabled || hasDictationCredentials else { return }
+    await cancelVoice()
+    cloudDictationEnabled = enabled
+    UserDefaults.standard.set(enabled, forKey: "cloudDictationEnabled")
+    voiceState = .notPrepared
+    partialTranscript = ""
+  }
+
+  func removeDictationCredentials() async {
+    await setCloudDictationEnabled(false)
+    do {
+      try KeychainStore.deleteDictation()
+      dictationCredentials = nil
+      errorMessage = nil
+    } catch {
+      report(error)
+    }
+  }
+
   private func send(
     text: String,
     submit: Bool,
@@ -375,15 +433,18 @@ final class AppModel {
       voiceState != .ready,
       voiceState != .starting,
       voiceState != .listening,
-      voiceState != .finalizing
+      voiceState != .finalizing,
+      voiceState != .transcribing,
+      voiceState != .cleaning
     else {
       return
     }
 
     partialTranscript = ""
     voiceState = .preparing
+    let mode = dictationMode
     do {
-      try await dictation.prepare()
+      try await dictation.prepare(for: mode)
       try Task.checkCancellation()
       voiceState = .ready
     } catch is CancellationError {
@@ -405,6 +466,7 @@ final class AppModel {
     else { return }
     voiceSessionGeneration &+= 1
     let generation = voiceSessionGeneration
+    let mode = dictationMode
     partialTranscript = ""
     voiceTarget = (selectedAgent.id, selectedAgent.name, selectedSessionName)
     voiceState = .starting
@@ -412,6 +474,7 @@ final class AppModel {
       guard let self else { return }
       do {
         try await self.dictation.start(
+          mode: mode,
           onPartial: { [weak self] partial in
             guard let self, generation == self.voiceSessionGeneration else { return }
             self.partialTranscript = partial
@@ -427,10 +490,22 @@ final class AppModel {
           return
         }
         self.voiceState = self.voiceEndInProgress ? .finalizing : .listening
+        if mode.isCloud, !self.voiceEndInProgress {
+          self.voiceDurationTask?.cancel()
+          self.voiceDurationTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(120))
+            guard let self, !Task.isCancelled, generation == self.voiceSessionGeneration else {
+              return
+            }
+            self.voiceDurationTask = nil
+            await self.finishVoice(.edit)
+          }
+        }
       } catch is CancellationError {
         await self.dictation.cancel()
         if generation == self.voiceSessionGeneration {
-          self.voiceState = self.dictation.isPrepared ? .ready : .notPrepared
+          self.voiceState =
+            self.dictation.isPrepared(for: self.dictationMode) ? .ready : .notPrepared
         }
       } catch {
         if generation == self.voiceSessionGeneration {
@@ -452,6 +527,8 @@ final class AppModel {
       !voiceEndInProgress,
       voiceState == .starting || voiceState == .listening || voiceStartTask != nil
     else { return }
+    voiceDurationTask?.cancel()
+    voiceDurationTask = nil
     voiceEndInProgress = true
     let generation = voiceSessionGeneration
     voiceState = .finalizing
@@ -466,18 +543,34 @@ final class AppModel {
     }
     guard generation == voiceSessionGeneration, dictation.isListening else { return }
     do {
-      let text = try await dictation.finalize()
+      let task = Task { [weak self] () throws -> DictationResult in
+        guard let self else { throw CancellationError() }
+        return try await self.dictation.finalize { phase in
+          guard generation == self.voiceSessionGeneration else { return }
+          self.voiceState =
+            switch phase {
+            case .transcribing: .transcribing
+            case .cleaning: .cleaning
+            }
+        }
+      }
+      voiceProcessingTask = task
+      let result = try await task.value
+      voiceProcessingTask = nil
       guard generation == voiceSessionGeneration, !Task.isCancelled else { return }
-      let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+      let validation = validateVoiceDraftText(result.text)
       if let voiceTarget {
-        if action == .edit {
+        if action == .edit || validation.issue == .controlCharacters
+          || validation.issue == .tooLarge
+        {
           voiceDraft = VoiceDraft(
-            text: trimmed,
+            text: validation.normalizedText,
+            rawText: result.rawText,
             agentID: voiceTarget.agentID,
             agentName: voiceTarget.agentName,
             session: voiceTarget.session
           )
-        } else if !trimmed.isEmpty,
+        } else if validation.isValid,
           canSend,
           selectedAgentID == voiceTarget.agentID,
           selectedSessionName == voiceTarget.session
@@ -486,7 +579,7 @@ final class AppModel {
             successFeedback += 1
           } else if let client {
             _ = await send(
-              text: trimmed,
+              text: validation.normalizedText,
               submit: true,
               to: voiceTarget.agentID,
               session: voiceTarget.session,
@@ -497,14 +590,16 @@ final class AppModel {
       }
       guard generation == voiceSessionGeneration else { return }
       voiceState = .ready
-      partialTranscript = ""
+      partialTranscript = result.fallbackNotice ?? ""
       voiceTarget = nil
     } catch is CancellationError {
+      voiceProcessingTask = nil
       if generation == voiceSessionGeneration {
-        voiceState = dictation.isPrepared ? .ready : .notPrepared
+        voiceState = dictation.isPrepared(for: dictationMode) ? .ready : .notPrepared
         voiceTarget = nil
       }
     } catch {
+      voiceProcessingTask = nil
       if generation == voiceSessionGeneration {
         handleVoiceFailure(error)
       }
@@ -515,19 +610,26 @@ final class AppModel {
     guard
       !voiceCancelInProgress,
       voiceState == .starting || voiceState == .listening || voiceState == .finalizing
-        || voiceStartTask != nil
+        || voiceState == .transcribing || voiceState == .cleaning
+        || voiceStartTask != nil || voiceProcessingTask != nil
     else { return }
     voiceCancelInProgress = true
     defer { voiceCancelInProgress = false }
     voiceSessionGeneration &+= 1
     voiceEndInProgress = false
     voiceState = .finalizing
+    voiceDurationTask?.cancel()
+    voiceDurationTask = nil
     let startTask = voiceStartTask
+    let processingTask = voiceProcessingTask
     startTask?.cancel()
+    processingTask?.cancel()
     await startTask?.value
+    _ = await processingTask?.result
     await dictation.cancel()
     voiceStartTask = nil
-    voiceState = dictation.isPrepared ? .ready : .notPrepared
+    voiceProcessingTask = nil
+    voiceState = dictation.isPrepared(for: dictationMode) ? .ready : .notPrepared
     partialTranscript = ""
     voiceTarget = nil
   }
@@ -684,11 +786,41 @@ func supportsRemoteActions(for agent: BridgeAgent) -> Bool {
   }
 }
 
-private enum CredentialStore {
-  private static let service = "com.danielou.AgentSlate.bridge"
-  private static let account = "bridge-credential"
+private enum KeychainStore {
+  private static let bridgeService = "com.danielou.AgentSlate.bridge"
+  private static let bridgeAccount = "bridge-credential"
+  private static let dictationService = "com.danielou.AgentSlate.dictation"
+  private static let dictationAccount = "cloud-api-keys"
 
-  static func load() -> BridgeCredential? {
+  static func loadBridge() -> BridgeCredential? {
+    load(BridgeCredential.self, service: bridgeService, account: bridgeAccount)
+  }
+
+  static func saveBridge(_ credential: BridgeCredential) throws {
+    try save(credential, service: bridgeService, account: bridgeAccount)
+  }
+
+  static func deleteBridge() throws {
+    try delete(service: bridgeService, account: bridgeAccount)
+  }
+
+  static func loadDictation() -> DictationCredentials? {
+    load(DictationCredentials.self, service: dictationService, account: dictationAccount)
+  }
+
+  static func saveDictation(_ credentials: DictationCredentials) throws {
+    try save(credentials, service: dictationService, account: dictationAccount)
+  }
+
+  static func deleteDictation() throws {
+    try delete(service: dictationService, account: dictationAccount)
+  }
+
+  private static func load<Value: Decodable>(
+    _ type: Value.Type,
+    service: String,
+    account: String
+  ) -> Value? {
     var item: CFTypeRef?
     let status = SecItemCopyMatching(
       [
@@ -701,17 +833,21 @@ private enum CredentialStore {
       &item
     )
     guard status == errSecSuccess, let data = item as? Data else { return nil }
-    return try? JSONDecoder().decode(BridgeCredential.self, from: data)
+    return try? JSONDecoder().decode(type, from: data)
   }
 
-  static func save(_ credential: BridgeCredential) throws {
+  private static func save<Value: Encodable>(
+    _ value: Value,
+    service: String,
+    account: String
+  ) throws {
     let query =
       [
         kSecClass: kSecClassGenericPassword,
         kSecAttrService: service,
         kSecAttrAccount: account,
       ] as CFDictionary
-    let data = try JSONEncoder().encode(credential)
+    let data = try JSONEncoder().encode(value)
     let status = SecItemUpdate(query, [kSecValueData: data] as CFDictionary)
     if status == errSecSuccess { return }
     guard status == errSecItemNotFound else { throw keychainError(status) }
@@ -729,7 +865,7 @@ private enum CredentialStore {
     guard addStatus == errSecSuccess else { throw keychainError(addStatus) }
   }
 
-  static func delete() throws {
+  private static func delete(service: String, account: String) throws {
     let status = SecItemDelete(
       [
         kSecClass: kSecClassGenericPassword,

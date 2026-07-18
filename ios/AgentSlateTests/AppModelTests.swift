@@ -1,5 +1,6 @@
 import AgentSlateClient
 import CoreGraphics
+import Foundation
 import Testing
 
 @testable import AgentSlate
@@ -185,11 +186,76 @@ func voiceDraftTextCountsEmojiUTF8Bytes() {
 @Test
 func voiceDraftOnlyMatchesItsOriginalSelectedTarget() {
   let draft = VoiceDraft(
-    text: "review me", agentID: "agent-1", agentName: "Codex", session: "default")
+    text: "review me", rawText: "review me", agentID: "agent-1", agentName: "Codex",
+    session: "default")
   #expect(draft.matches(agentID: "agent-1", session: "default", available: true))
   #expect(!draft.matches(agentID: "agent-2", session: "default", available: true))
   #expect(!draft.matches(agentID: "agent-1", session: "other", available: true))
   #expect(!draft.matches(agentID: "agent-1", session: "default", available: false))
+}
+
+@Test
+func dictationCredentialsTrimAndRequireOpenRouterKey() {
+  let credentials = DictationCredentials(openRouterAPIKey: "\nsk-or-test\n")
+  #expect(credentials.openRouterAPIKey == "sk-or-test")
+  #expect(credentials.isComplete)
+  #expect(!DictationCredentials(openRouterAPIKey: "").isComplete)
+}
+
+@Test
+func cleanupFallsBackToRawWhenMissingOrInvalid() {
+  let cleaned = resolveCleanup(rawText: "um use port 8765", cleanedText: "Use port 8765.")
+  #expect(cleaned.text == "Use port 8765.")
+  #expect(cleaned.fallbackNotice == nil)
+
+  let missing = resolveCleanup(rawText: "raw text", cleanedText: nil)
+  #expect(missing.text == "raw text")
+  #expect(missing.fallbackNotice != nil)
+
+  let invalid = resolveCleanup(rawText: "raw text", cleanedText: "bad\ttext")
+  #expect(invalid.text == "raw text")
+  #expect(invalid.fallbackNotice != nil)
+}
+
+@Test
+func openRouterTranscriptionUsesWhisperTurboAndWavAudio() throws {
+  let request = try CloudDictationClient().makeTranscriptionRequest(
+    audioData: Data("audio".utf8),
+    apiKey: "sk-or-secret"
+  )
+  let body = try #require(request.httpBody)
+  let json = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+  let inputAudio = try #require(json["input_audio"] as? [String: Any])
+  let provider = try #require(json["provider"] as? [String: Any])
+
+  #expect(request.url?.absoluteString == "https://openrouter.ai/api/v1/audio/transcriptions")
+  #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer sk-or-secret")
+  #expect(json["model"] as? String == "openai/whisper-large-v3-turbo")
+  #expect(inputAudio["format"] as? String == "wav")
+  #expect(inputAudio["data"] as? String == Data("audio".utf8).base64EncodedString())
+  #expect(provider["zdr"] as? Bool == true)
+}
+
+@Test
+func cleanupRequestIsMinimalAndZeroRetention() throws {
+  let request = try CloudDictationClient().makeCleanupRequest(
+    transcript: "open the project",
+    apiKey: "sk-or-secret"
+  )
+  let body = try #require(request.httpBody)
+  let json = try #require(
+    JSONSerialization.jsonObject(with: body) as? [String: Any])
+  let messages = try #require(json["messages"] as? [[String: Any]])
+  let provider = try #require(json["provider"] as? [String: Any])
+  let reasoning = try #require(json["reasoning"] as? [String: Any])
+  let lastContent = messages.last?["content"] as? String
+
+  #expect(request.url?.absoluteString == "https://openrouter.ai/api/v1/chat/completions")
+  #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer sk-or-secret")
+  #expect(json["model"] as? String == "google/gemini-3.1-flash-lite")
+  #expect(lastContent == "open the project")
+  #expect(provider["zdr"] as? Bool == true)
+  #expect(reasoning["effort"] as? String == "none")
 }
 
 @MainActor

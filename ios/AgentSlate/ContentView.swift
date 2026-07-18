@@ -527,7 +527,7 @@ private struct ControlBank: View {
 
   private var showsVoiceStatus: Bool {
     switch voiceState {
-    case .preparing, .finalizing, .failed:
+    case .preparing, .finalizing, .transcribing, .cleaning, .failed:
       true
     case .starting, .listening:
       false
@@ -556,6 +556,14 @@ private struct ControlBank: View {
         Text("Finishing dictation…")
           .foregroundStyle(Palette.secondaryText)
           .accessibilityLabel("Finishing dictation")
+      case .transcribing:
+        Text("Transcribing with Whisper…")
+          .foregroundStyle(Palette.secondaryText)
+          .accessibilityLabel("Transcribing with Whisper")
+      case .cleaning:
+        Text("Cleaning up dictation…")
+          .foregroundStyle(Palette.secondaryText)
+          .accessibilityLabel("Cleaning up dictation")
       case .failed(let message):
         HStack(alignment: .firstTextBaseline, spacing: 10) {
           VStack(alignment: .leading, spacing: 3) {
@@ -1177,6 +1185,14 @@ private struct VoiceReviewView: View {
         LabeledContent("Agent", value: draft.agentName)
         LabeledContent("Session", value: draft.session)
 
+        if draft.rawText != draft.text {
+          Button("Use Raw Transcript") {
+            text = draft.rawText
+            selection = TextSelection(insertionPoint: text.endIndex)
+          }
+          .font(.footnote.weight(.semibold))
+        }
+
         TextEditor(text: $text, selection: $selection)
           .focused($editorFocused)
           .font(.body)
@@ -1266,6 +1282,8 @@ private struct SettingsView: View {
   @Environment(\.dismiss) private var dismiss
   @State private var host: String
   @State private var code = ""
+  @State private var openRouterAPIKey = ""
+  @State private var showingCloudConsent = false
   @State private var showingForgetConfirmation = false
   @State private var notice: SettingsNotice?
 
@@ -1331,6 +1349,65 @@ private struct SettingsView: View {
             .font(.footnote)
             .foregroundStyle(Palette.secondaryText)
           }
+        }
+
+        Section {
+          LabeledContent(
+            "Current Engine",
+            value: model.cloudDictationEnabled ? "Cloud with Apple fallback" : "Apple on-device"
+          )
+
+          if model.hasDictationCredentials {
+            LabeledContent("OpenRouter API Key", value: "Saved")
+          }
+
+          SecureField("OpenRouter API key", text: $openRouterAPIKey)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .textContentType(.password)
+
+          Button(model.hasDictationCredentials ? "Replace API Key" : "Save API Key") {
+            if model.saveDictationCredentials(openRouterAPIKey: openRouterAPIKey) {
+              openRouterAPIKey = ""
+            }
+          }
+          .disabled(openRouterAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+          if model.hasDictationCredentials {
+            Toggle(
+              "Use Cloud Dictation",
+              isOn: Binding(
+                get: { model.cloudDictationEnabled },
+                set: { enabled in
+                  if enabled {
+                    showingCloudConsent = true
+                  } else {
+                    Task { await model.setCloudDictationEnabled(false) }
+                  }
+                }
+              )
+            )
+            .alert("Enable Cloud Dictation?", isPresented: $showingCloudConsent) {
+              Button("Cancel", role: .cancel) {}
+              Button("Enable") {
+                Task { await model.setCloudDictationEnabled(true) }
+              }
+            } message: {
+              Text(
+                "Your microphone audio will be sent through OpenRouter to Groq's Whisper model for transcription. The transcript will then be sent through OpenRouter to Google for cleanup. Both requests require Zero Data Retention routing."
+              )
+            }
+
+            Button("Remove API Key", role: .destructive) {
+              Task { await model.removeDictationCredentials() }
+            }
+          }
+        } header: {
+          Text("Dictation")
+        } footer: {
+          Text(
+            "Cloud dictation uses your OpenRouter account and requires Zero Data Retention routing. Apple on-device dictation remains available when cloud dictation is off or unavailable."
+          )
         }
 
         Section("Offline Preview") {

@@ -2,8 +2,7 @@
 import Foundation
 import Speech
 
-/// On-device hold-to-talk dictation via iOS 26 SpeechAnalyzer + DictationTranscriber.
-/// Audio never leaves the device.
+/// Hold-to-talk dictation with optional user-funded cloud transcription and on-device fallback.
 @MainActor
 final class VoiceDictationController {
   enum Failure: LocalizedError {
@@ -12,6 +11,7 @@ final class VoiceDictationController {
     case assetUnavailable
     case audioSetupFailed
     case notListening
+    case transcriptionFailed
 
     var errorDescription: String? {
       switch self {
@@ -25,12 +25,13 @@ final class VoiceDictationController {
         "Could not start the microphone for dictation."
       case .notListening:
         "Voice dictation is not active."
+      case .transcriptionFailed:
+        "Cloud and on-device transcription both failed. Try again."
       }
     }
   }
 
   private(set) var isListening = false
-  private(set) var isPrepared = false
   private(set) var finalizedText = ""
   private(set) var volatileText = ""
   private(set) var lastPartial = ""
@@ -38,6 +39,7 @@ final class VoiceDictationController {
   var liveText: String { finalizedText + volatileText }
 
   private let audioEngine = AVAudioEngine()
+  private let cloudClient: CloudDictationClient
   private var transcriber: DictationTranscriber?
   private var analyzer: SpeechAnalyzer?
   private var inputBuilder: AsyncStream<AnalyzerInput>.Continuation?
@@ -46,18 +48,39 @@ final class VoiceDictationController {
   private var resultFailure: (any Error)?
   private var sessionGeneration = 0
   private var preparedLocale: Locale?
+  private var microphonePrepared = false
+  private var applePrepared = false
+  private var activeMode: DictationMode = .apple
+  private var recorder: AVAudioRecorder?
+  private var recordingURL: URL?
   private var tapInstalled = false
   private var cancellationRequested = false
   private var onPartial: ((String) -> Void)?
   private var onFailure: ((any Error) -> Void)?
 
-  func prepare() async throws {
-    guard !isPrepared else { return }
-    guard await AVAudioApplication.requestRecordPermission() else {
-      throw Failure.permissionDenied
+  init(cloudClient: CloudDictationClient = CloudDictationClient()) {
+    self.cloudClient = cloudClient
+  }
+
+  func isPrepared(for mode: DictationMode) -> Bool {
+    microphonePrepared && (mode.isCloud || applePrepared)
+  }
+
+  func prepare(for mode: DictationMode) async throws {
+    if !microphonePrepared {
+      guard await AVAudioApplication.requestRecordPermission() else {
+        throw Failure.permissionDenied
+      }
+      microphonePrepared = true
     }
     try Task.checkCancellation()
 
+    guard !mode.isCloud else { return }
+    try await prepareApple()
+  }
+
+  private func prepareApple() async throws {
+    guard !applePrepared else { return }
     guard let locale = await DictationTranscriber.supportedLocale(equivalentTo: .current) else {
       throw Failure.localeNotSupported
     }
@@ -72,15 +95,16 @@ final class VoiceDictationController {
     try Task.checkCancellation()
 
     preparedLocale = locale
-    isPrepared = true
+    applePrepared = true
   }
 
   func start(
+    mode: DictationMode,
     onPartial: @escaping (String) -> Void,
     onFailure: @escaping (any Error) -> Void
   ) async throws {
     guard !isListening else { return }
-    if !isPrepared { try await prepare() }
+    if !isPrepared(for: mode) { try await prepare(for: mode) }
     try Task.checkCancellation()
 
     sessionGeneration &+= 1
@@ -92,8 +116,24 @@ final class VoiceDictationController {
     lastPartial = ""
     cancellationRequested = false
     resultFailure = nil
+    activeMode = mode
     onPartial("")
 
+    if mode.isCloud {
+      do {
+        try startCloudRecording()
+        isListening = true
+      } catch {
+        finishSession(for: generation)
+        throw Failure.audioSetupFailed
+      }
+      return
+    }
+
+    try await startAppleCapture(generation: generation)
+  }
+
+  private func startAppleCapture(generation: Int) async throws {
     guard let locale = preparedLocale else {
       finishSession(for: generation)
       throw Failure.localeNotSupported
@@ -166,9 +206,23 @@ final class VoiceDictationController {
     isListening = true
   }
 
-  func finalize() async throws -> String {
+  func finalize(onPhase: (CloudDictationPhase) -> Void) async throws -> DictationResult {
     guard isListening else { throw Failure.notListening }
     let generation = sessionGeneration
+
+    if case .cloud(let credentials) = activeMode {
+      return try await finalizeCloud(
+        generation: generation,
+        credentials: credentials,
+        onPhase: onPhase
+      )
+    }
+
+    let text = try await finalizeAppleCapture(generation: generation)
+    return DictationResult(rawText: text, text: text, fallbackNotice: nil)
+  }
+
+  private func finalizeAppleCapture(generation: Int) async throws -> String {
     let analyzer = analyzer
     let resultsTask = resultsTask
     isListening = false
@@ -195,21 +249,91 @@ final class VoiceDictationController {
     }
   }
 
+  private func finalizeCloud(
+    generation: Int,
+    credentials: DictationCredentials,
+    onPhase: (CloudDictationPhase) -> Void
+  ) async throws -> DictationResult {
+    isListening = false
+    recorder?.stop()
+    recorder = nil
+    try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    guard let recordingURL else {
+      finishSession(for: generation)
+      throw Failure.audioSetupFailed
+    }
+    defer {
+      try? FileManager.default.removeItem(at: recordingURL)
+      if generation == sessionGeneration { self.recordingURL = nil }
+    }
+
+    onPhase(.transcribing)
+    let rawText: String
+    var notice: String?
+    do {
+      rawText = try await cloudClient.transcribe(
+        audioURL: recordingURL,
+        apiKey: credentials.openRouterAPIKey
+      )
+    } catch is CancellationError {
+      throw CancellationError()
+    } catch {
+      do {
+        rawText = try await transcribeAppleFile(recordingURL)
+        notice = "Cloud transcription unavailable; used Apple transcription."
+      } catch is CancellationError {
+        throw CancellationError()
+      } catch {
+        finishSession(for: generation)
+        throw Failure.transcriptionFailed
+      }
+    }
+
+    try Task.checkCancellation()
+    guard generation == sessionGeneration, !cancellationRequested else {
+      throw CancellationError()
+    }
+
+    onPhase(.cleaning)
+    let cleanedText = try? await cloudClient.cleanup(
+      transcript: rawText,
+      apiKey: credentials.openRouterAPIKey
+    )
+    try Task.checkCancellation()
+    guard generation == sessionGeneration, !cancellationRequested else {
+      throw CancellationError()
+    }
+
+    let cleanup = resolveCleanup(rawText: rawText, cleanedText: cleanedText)
+    if let cleanupNotice = cleanup.fallbackNotice {
+      notice = notice.map { "\($0) \(cleanupNotice)" } ?? cleanupNotice
+    }
+    lastPartial = cleanup.text
+    finishSession(for: generation)
+    return DictationResult(rawText: rawText, text: cleanup.text, fallbackNotice: notice)
+  }
+
   func cancel() async {
     let generation = sessionGeneration
     let analyzer = analyzer
     let resultsTask = resultsTask
     cancellationRequested = true
-    guard isListening || analyzer != nil else {
+    guard isListening || analyzer != nil || recorder != nil || recordingURL != nil else {
       finishSession(for: generation)
       return
     }
 
+    recorder?.stop()
+    recorder = nil
     stopCapture()
     await analyzer?.cancelAndFinishNow()
     if let resultsTask {
       resultsTask.cancel()
       _ = await resultsTask.result
+    }
+    if let recordingURL {
+      try? FileManager.default.removeItem(at: recordingURL)
+      self.recordingURL = nil
     }
     finishSession(for: generation)
   }
@@ -222,6 +346,7 @@ final class VoiceDictationController {
     analyzer = nil
     transcriber = nil
     analyzerFormat = nil
+    recorder = nil
     onPartial = nil
     onFailure = nil
     isListening = false
@@ -246,6 +371,52 @@ final class VoiceDictationController {
       reportingOptions: [.volatileResults],
       attributeOptions: []
     )
+  }
+
+  private func startCloudRecording() throws {
+    try setupAudioSession()
+    let url = FileManager.default.temporaryDirectory
+      .appendingPathComponent("agentslate-\(UUID().uuidString)")
+      .appendingPathExtension("wav")
+    let recorder = try AVAudioRecorder(
+      url: url,
+      settings: [
+        AVFormatIDKey: kAudioFormatLinearPCM,
+        AVSampleRateKey: 16_000,
+        AVNumberOfChannelsKey: 1,
+        AVLinearPCMBitDepthKey: 16,
+        AVLinearPCMIsFloatKey: false,
+        AVLinearPCMIsBigEndianKey: false,
+      ])
+    guard recorder.prepareToRecord(), recorder.record() else {
+      throw Failure.audioSetupFailed
+    }
+    recordingURL = url
+    self.recorder = recorder
+  }
+
+  private func transcribeAppleFile(_ url: URL) async throws -> String {
+    try await prepareApple()
+    guard let locale = preparedLocale else { throw Failure.localeNotSupported }
+    let transcriber = makeTranscriber(locale: locale)
+    let analyzer = SpeechAnalyzer(modules: [transcriber])
+    let file = try AVAudioFile(forReading: url)
+    try await analyzer.start(inputAudioFile: file, finishAfterFile: true)
+
+    var finalized = ""
+    var volatile = ""
+    for try await result in transcriber.results {
+      let piece = String(result.text.characters)
+      if result.isFinal {
+        finalized += piece
+        volatile = ""
+      } else {
+        volatile = piece
+      }
+    }
+    let text = (finalized + volatile).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty else { throw Failure.transcriptionFailed }
+    return text
   }
 
   private func ensureModelInstalled(for transcriber: DictationTranscriber, locale: Locale)
