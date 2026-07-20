@@ -1,6 +1,6 @@
 # AgentSlate Implementation Tracker
 
-Last updated: 2026-07-18
+Last updated: 2026-07-20
 Allowed states: `Not started`, `In progress`, `Blocked`, `Done`
 
 A task is `Done` only when its acceptance evidence is recorded here. A phase is `Done` only when every exit criterion passes.
@@ -177,6 +177,7 @@ Exit criterion: the external TestFlight build is approved and installed, public 
 | 2026-07-18 | Keep Apple dictation as the default and add an optional user-funded cloud pipeline | One user-supplied OpenRouter key avoids developer-funded compute; explicit opt-in preserves an on-device path and makes cloud data transfer visible |
 | 2026-07-18 | Use OpenRouter for Groq-hosted Whisper Turbo and Gemini Flash Lite cleanup, with automatic degradation | One credential covers both requests; transcription falls back to Apple's local file path, cleanup falls back to raw text, and no provider failure discards a usable transcript |
 | 2026-07-18 | Keep cloud dictation changes local until physical-device acceptance | The owner will build from Xcode and explicitly prohibited a TestFlight upload or submission for this work |
+| 2026-07-20 | Prepare the selected dictation engine before touch-down and yield once before capture startup | The starting screen can render immediately while Apple model setup or cloud recorder allocation happens during the existing ready phase; the microphone session still activates only while recording |
 
 ## Verification evidence
 
@@ -214,3 +215,4 @@ Exit criterion: the external TestFlight build is approved and installed, public 
 | 2026-07-16 | AgentSlate 0.1.0 integrated release gates | Automated pass; physical device and publication pending | `cargo fmt`, strict locked Clippy, 12 Rust tests, locked release build, 21 Swift package tests, 11 iOS simulator tests, Xcode static analysis, unsigned archive, signed App Store Connect IPA export, manifest/notices/icon inspection, clean source install, live Tailscale/Herdr doctor, and simulator onboarding/demo/settings/acknowledgements review passed. The unavailable paired iPhone prevents the physical acceptance pass. |
 | 2026-07-16 | External TestFlight submission | Waiting for Review | Verified build `0.1.0 (4)` is attached to `AgentSlate Beta` with the updated Accept/Deny test notes. The open-to-anyone public link has no tester limit and will accept testers only after Apple approves the build. Production version `0.1.0` remains in Prepare for Submission. |
 | 2026-07-18 | Optional cloud dictation implementation | Automated pass; physical device pending | The iPhone 17e simulator build and all 15 app tests passed. Request tests verify OpenRouter Whisper Turbo transcription, Gemini Flash Lite cleanup, transcript-only context, zero-data-retention routing, the single credential requirement, and raw cleanup fallback. No build was uploaded or submitted. |
+| 2026-07-20 | Dictation touch-down latency reduction | Automated pass; owner device test pending | The iPhone 17e simulator ran all 15 app tests and Xcode static analysis passed. A signed device build also compiled successfully, but no app interaction was performed; the owner will verify Apple and cloud hold-to-talk startup by hand. |

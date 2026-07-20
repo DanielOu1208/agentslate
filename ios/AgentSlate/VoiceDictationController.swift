@@ -64,7 +64,11 @@ final class VoiceDictationController {
   }
 
   func isPrepared(for mode: DictationMode) -> Bool {
-    microphonePrepared && (mode.isCloud || applePrepared)
+    guard microphonePrepared else { return false }
+    if mode.isCloud {
+      return recorder != nil && recordingURL != nil
+    }
+    return applePrepared && transcriber != nil && analyzer != nil && analyzerFormat != nil
   }
 
   func prepare(for mode: DictationMode) async throws {
@@ -77,8 +81,11 @@ final class VoiceDictationController {
     try Task.checkCancellation()
     try configureAudioSession()
 
-    guard !mode.isCloud else { return }
-    try await prepareApple()
+    if mode.isCloud {
+      try prepareCloudRecording()
+    } else {
+      try await prepareAppleCapture()
+    }
   }
 
   private func prepareApple() async throws {
@@ -98,6 +105,29 @@ final class VoiceDictationController {
 
     preparedLocale = locale
     applePrepared = true
+  }
+
+  private func prepareAppleCapture() async throws {
+    guard transcriber == nil, analyzer == nil, analyzerFormat == nil else { return }
+    try await prepareApple()
+    guard let locale = preparedLocale else { throw Failure.localeNotSupported }
+
+    let transcriber = makeTranscriber(locale: locale)
+    let analyzer = SpeechAnalyzer(
+      modules: [transcriber],
+      options: .init(priority: .userInitiated, modelRetention: .lingering)
+    )
+    guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(
+      compatibleWith: [transcriber]
+    ) else {
+      throw Failure.audioSetupFailed
+    }
+    try await analyzer.prepareToAnalyze(in: format)
+    try Task.checkCancellation()
+
+    self.transcriber = transcriber
+    self.analyzer = analyzer
+    analyzerFormat = format
   }
 
   func start(
@@ -126,6 +156,7 @@ final class VoiceDictationController {
         try startCloudRecording()
         isListening = true
       } catch {
+        discardRecording()
         finishSession(for: generation)
         throw Failure.audioSetupFailed
       }
@@ -136,27 +167,10 @@ final class VoiceDictationController {
   }
 
   private func startAppleCapture(generation: Int) async throws {
-    guard let locale = preparedLocale else {
-      finishSession(for: generation)
-      throw Failure.localeNotSupported
-    }
-    let transcriber = makeTranscriber(locale: locale)
-    self.transcriber = transcriber
-
-    let analyzer = SpeechAnalyzer(modules: [transcriber])
-    self.analyzer = analyzer
-    let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber])
-    do {
-      try Task.checkCancellation()
-    } catch {
-      finishSession(for: generation)
-      throw error
-    }
-    guard let format else {
+    guard let transcriber, let analyzer, analyzerFormat != nil else {
       finishSession(for: generation)
       throw Failure.audioSetupFailed
     }
-    analyzerFormat = format
 
     resultsTask = Task { [weak self] in
       guard let self else { return }
@@ -326,17 +340,12 @@ final class VoiceDictationController {
       return
     }
 
-    recorder?.stop()
-    recorder = nil
+    discardRecording()
     stopCapture()
     await analyzer?.cancelAndFinishNow()
     if let resultsTask {
       resultsTask.cancel()
       _ = await resultsTask.result
-    }
-    if let recordingURL {
-      try? FileManager.default.removeItem(at: recordingURL)
-      self.recordingURL = nil
     }
     finishSession(for: generation)
   }
@@ -383,8 +392,8 @@ final class VoiceDictationController {
     )
   }
 
-  private func startCloudRecording() throws {
-    try setupAudioSession()
+  private func prepareCloudRecording() throws {
+    guard recorder == nil, recordingURL == nil else { return }
     let url = FileManager.default.temporaryDirectory
       .appendingPathComponent("agentslate-\(UUID().uuidString)")
       .appendingPathExtension("wav")
@@ -398,18 +407,37 @@ final class VoiceDictationController {
         AVLinearPCMIsFloatKey: false,
         AVLinearPCMIsBigEndianKey: false,
       ])
-    guard recorder.prepareToRecord(), recorder.record() else {
+    guard recorder.prepareToRecord() else {
+      try? FileManager.default.removeItem(at: url)
       throw Failure.audioSetupFailed
     }
     recordingURL = url
     self.recorder = recorder
   }
 
+  private func startCloudRecording() throws {
+    guard let recorder, recordingURL != nil else { throw Failure.audioSetupFailed }
+    try setupAudioSession()
+    guard recorder.record() else { throw Failure.audioSetupFailed }
+  }
+
+  private func discardRecording() {
+    recorder?.stop()
+    recorder = nil
+    if let recordingURL {
+      try? FileManager.default.removeItem(at: recordingURL)
+      self.recordingURL = nil
+    }
+  }
+
   private func transcribeAppleFile(_ url: URL) async throws -> String {
     try await prepareApple()
     guard let locale = preparedLocale else { throw Failure.localeNotSupported }
     let transcriber = makeTranscriber(locale: locale, reportsVolatileResults: false)
-    let analyzer = SpeechAnalyzer(modules: [transcriber])
+    let analyzer = SpeechAnalyzer(
+      modules: [transcriber],
+      options: .init(priority: .userInitiated, modelRetention: .lingering)
+    )
     let file = try AVAudioFile(forReading: url)
 
     async let collectedText = collectResults(from: transcriber)

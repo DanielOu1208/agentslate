@@ -444,15 +444,24 @@ final class AppModel {
 
     partialTranscript = ""
     voiceState = .preparing
+    let generation = voiceSessionGeneration
     let mode = dictationMode
     do {
       try await dictation.prepare(for: mode)
       try Task.checkCancellation()
+      guard generation == voiceSessionGeneration else {
+        await dictation.cancel()
+        return
+      }
       voiceState = .ready
     } catch is CancellationError {
-      voiceState = .notPrepared
+      if generation == voiceSessionGeneration {
+        voiceState = .notPrepared
+      }
     } catch {
-      handleVoiceFailure(error)
+      if generation == voiceSessionGeneration {
+        handleVoiceFailure(error)
+      }
     }
   }
 
@@ -475,6 +484,8 @@ final class AppModel {
     voiceStartTask = Task { [weak self] in
       guard let self else { return }
       do {
+        await Task.yield()
+        try Task.checkCancellation()
         try await self.dictation.start(
           mode: mode,
           onPartial: { [weak self] partial in
@@ -522,7 +533,7 @@ final class AppModel {
 
   func finishVoice(_ action: VoiceReleaseAction) async {
     if action == .cancel {
-      await cancelVoice()
+      await cancelVoice(reprepare: true)
       return
     }
     guard
@@ -592,9 +603,15 @@ final class AppModel {
         }
       }
       guard generation == voiceSessionGeneration else { return }
-      voiceState = .ready
-      partialTranscript = result.fallbackNotice ?? ""
+      voiceState = .notPrepared
+      partialTranscript = ""
       voiceTarget = nil
+      if canSend {
+        await prepareVoice()
+      }
+      if voiceState == .ready {
+        partialTranscript = result.fallbackNotice ?? ""
+      }
     } catch is CancellationError {
       voiceProcessingTask = nil
       if generation == voiceSessionGeneration {
@@ -609,10 +626,11 @@ final class AppModel {
     }
   }
 
-  func cancelVoice() async {
+  func cancelVoice(reprepare: Bool = false) async {
     guard
       !voiceCancelInProgress,
-      voiceState == .starting || voiceState == .listening || voiceState == .finalizing
+      voiceState == .preparing || voiceState == .ready || voiceState == .starting
+        || voiceState == .listening || voiceState == .finalizing
         || voiceState == .transcribing || voiceState == .appleFallback
         || voiceState == .cleaning
         || voiceStartTask != nil || voiceProcessingTask != nil
@@ -633,9 +651,12 @@ final class AppModel {
     await dictation.cancel()
     voiceStartTask = nil
     voiceProcessingTask = nil
-    voiceState = dictation.isPrepared(for: dictationMode) ? .ready : .notPrepared
+    voiceState = .notPrepared
     partialTranscript = ""
     voiceTarget = nil
+    if reprepare, canSend {
+      await prepareVoice()
+    }
   }
 
   func apply(_ event: BridgeEvent) {

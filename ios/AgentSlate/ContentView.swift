@@ -96,7 +96,7 @@ struct ContentView: View {
                 armedVoiceAction = .send
               }
             },
-            cancelVoice: { Task { await model.cancelVoice() } },
+            cancelVoice: { Task { await model.cancelVoice(reprepare: true) } },
             armVoice: armVoice
           )
           .frame(width: cell * 2 + gap, height: cell)
@@ -144,7 +144,13 @@ struct ContentView: View {
       }
     }
     .onChange(of: model.canSend) { _, canSend in
-      if !canSend { Task { await model.cancelVoice() } }
+      Task {
+        if canSend {
+          await model.prepareVoice()
+        } else {
+          await model.cancelVoice()
+        }
+      }
     }
   }
 
