@@ -30,6 +30,7 @@ struct DictationResult: Equatable, Sendable {
 
 enum CloudDictationPhase: Sendable {
   case transcribing
+  case appleFallback
   case cleaning
 }
 
@@ -107,7 +108,7 @@ struct CloudDictationClient: Sendable {
     var request = URLRequest(
       url: URL(string: "https://openrouter.ai/api/v1/audio/transcriptions")!)
     request.httpMethod = "POST"
-    request.timeoutInterval = 30
+    request.timeoutInterval = 15
     request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.httpBody = try JSONEncoder().encode(

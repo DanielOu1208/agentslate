@@ -49,6 +49,7 @@ final class VoiceDictationController {
   private var sessionGeneration = 0
   private var preparedLocale: Locale?
   private var microphonePrepared = false
+  private var audioSessionConfigured = false
   private var applePrepared = false
   private var activeMode: DictationMode = .apple
   private var recorder: AVAudioRecorder?
@@ -74,6 +75,7 @@ final class VoiceDictationController {
       microphonePrepared = true
     }
     try Task.checkCancellation()
+    try configureAudioSession()
 
     guard !mode.isCloud else { return }
     try await prepareApple()
@@ -278,6 +280,7 @@ final class VoiceDictationController {
     } catch is CancellationError {
       throw CancellationError()
     } catch {
+      onPhase(.appleFallback)
       do {
         rawText = try await transcribeAppleFile(recordingURL)
         notice = "Cloud transcription unavailable; used Apple transcription."
@@ -364,11 +367,18 @@ final class VoiceDictationController {
   }
 
   private func makeTranscriber(locale: Locale) -> DictationTranscriber {
+    makeTranscriber(locale: locale, reportsVolatileResults: true)
+  }
+
+  private func makeTranscriber(
+    locale: Locale,
+    reportsVolatileResults: Bool
+  ) -> DictationTranscriber {
     DictationTranscriber(
       locale: locale,
       contentHints: [.shortForm],
       transcriptionOptions: [.punctuation, .etiquetteReplacements],
-      reportingOptions: [.volatileResults],
+      reportingOptions: reportsVolatileResults ? [.volatileResults] : [],
       attributeOptions: []
     )
   }
@@ -398,24 +408,32 @@ final class VoiceDictationController {
   private func transcribeAppleFile(_ url: URL) async throws -> String {
     try await prepareApple()
     guard let locale = preparedLocale else { throw Failure.localeNotSupported }
-    let transcriber = makeTranscriber(locale: locale)
+    let transcriber = makeTranscriber(locale: locale, reportsVolatileResults: false)
     let analyzer = SpeechAnalyzer(modules: [transcriber])
     let file = try AVAudioFile(forReading: url)
-    try await analyzer.start(inputAudioFile: file, finishAfterFile: true)
 
-    var finalized = ""
-    var volatile = ""
-    for try await result in transcriber.results {
-      let piece = String(result.text.characters)
-      if result.isFinal {
-        finalized += piece
-        volatile = ""
+    async let collectedText = collectResults(from: transcriber)
+    do {
+      if let lastSampleTime = try await analyzer.analyzeSequence(from: file) {
+        try await analyzer.finalizeAndFinish(through: lastSampleTime)
       } else {
-        volatile = piece
+        await analyzer.cancelAndFinishNow()
       }
+      let collected = try await collectedText
+      let text = collected.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !text.isEmpty else { throw Failure.transcriptionFailed }
+      return text
+    } catch {
+      await analyzer.cancelAndFinishNow()
+      throw error
     }
-    let text = (finalized + volatile).trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty else { throw Failure.transcriptionFailed }
+  }
+
+  private func collectResults(from transcriber: DictationTranscriber) async throws -> String {
+    var text = ""
+    for try await result in transcriber.results where result.isFinal {
+      text += String(result.text.characters)
+    }
     return text
   }
 
@@ -438,9 +456,17 @@ final class VoiceDictationController {
   }
 
   private func setupAudioSession() throws {
-    let session = AVAudioSession.sharedInstance()
-    try session.setCategory(.record, mode: .measurement)
-    try session.setActive(true, options: .notifyOthersOnDeactivation)
+    try configureAudioSession()
+    try AVAudioSession.sharedInstance().setActive(
+      true,
+      options: .notifyOthersOnDeactivation
+    )
+  }
+
+  private func configureAudioSession() throws {
+    guard !audioSessionConfigured else { return }
+    try AVAudioSession.sharedInstance().setCategory(.record, mode: .measurement)
+    audioSessionConfigured = true
   }
 
   private func startMicrophone() throws {

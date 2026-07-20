@@ -87,6 +87,7 @@ struct ContentView: View {
             editTarget: targets.edit,
             beginVoice: {
               armedVoiceAction = .send
+              voiceSelectionFeedback += 1
               model.beginVoice()
             },
             releaseVoice: { action in
@@ -527,7 +528,7 @@ private struct ControlBank: View {
 
   private var showsVoiceStatus: Bool {
     switch voiceState {
-    case .preparing, .finalizing, .transcribing, .cleaning, .failed:
+    case .preparing, .finalizing, .transcribing, .appleFallback, .cleaning, .failed:
       true
     case .starting, .listening:
       false
@@ -560,6 +561,10 @@ private struct ControlBank: View {
         Text("Transcribing with Whisper…")
           .foregroundStyle(Palette.secondaryText)
           .accessibilityLabel("Transcribing with Whisper")
+      case .appleFallback:
+        Text("Using Apple transcription fallback…")
+          .foregroundStyle(Palette.secondaryText)
+          .accessibilityLabel("Using Apple transcription fallback")
       case .cleaning:
         Text("Cleaning up dictation…")
           .foregroundStyle(Palette.secondaryText)
@@ -625,7 +630,11 @@ private struct VoiceKey: View {
             pressed = true
           }
           .onChanged { value in
-            guard isHolding else { return }
+            if !isHolding {
+              guard enabled else { return }
+              isHolding = true
+              beginVoice()
+            }
             armVoice(
               .classify(
                 value.location,
@@ -649,11 +658,7 @@ private struct VoiceKey: View {
           }
       )
       .onChange(of: isPressed) { wasPressed, isPressed in
-        if isPressed {
-          guard enabled, !isHolding else { return }
-          isHolding = true
-          beginVoice()
-        } else if wasPressed, isHolding {
+        if !isPressed, wasPressed, isHolding {
           isHolding = false
           cancelVoice()
         }

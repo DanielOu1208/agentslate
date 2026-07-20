@@ -230,6 +230,7 @@ func openRouterTranscriptionUsesWhisperTurboAndWavAudio() throws {
 
   #expect(request.url?.absoluteString == "https://openrouter.ai/api/v1/audio/transcriptions")
   #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer sk-or-secret")
+  #expect(request.timeoutInterval == 15)
   #expect(json["model"] as? String == "openai/whisper-large-v3-turbo")
   #expect(inputAudio["format"] as? String == "wav")
   #expect(inputAudio["data"] as? String == Data("audio".utf8).base64EncodedString())

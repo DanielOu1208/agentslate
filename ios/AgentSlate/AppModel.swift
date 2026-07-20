@@ -12,6 +12,7 @@ enum VoiceState: Equatable {
   case listening
   case finalizing
   case transcribing
+  case appleFallback
   case cleaning
   case failed(String)
 }
@@ -435,6 +436,7 @@ final class AppModel {
       voiceState != .listening,
       voiceState != .finalizing,
       voiceState != .transcribing,
+      voiceState != .appleFallback,
       voiceState != .cleaning
     else {
       return
@@ -550,6 +552,7 @@ final class AppModel {
           self.voiceState =
             switch phase {
             case .transcribing: .transcribing
+            case .appleFallback: .appleFallback
             case .cleaning: .cleaning
             }
         }
@@ -610,7 +613,8 @@ final class AppModel {
     guard
       !voiceCancelInProgress,
       voiceState == .starting || voiceState == .listening || voiceState == .finalizing
-        || voiceState == .transcribing || voiceState == .cleaning
+        || voiceState == .transcribing || voiceState == .appleFallback
+        || voiceState == .cleaning
         || voiceStartTask != nil || voiceProcessingTask != nil
     else { return }
     voiceCancelInProgress = true
