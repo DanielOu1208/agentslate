@@ -1,6 +1,6 @@
 # AgentSlate Implementation Tracker
 
-Last updated: 2026-07-20
+Last updated: 2026-07-23
 Allowed states: `Not started`, `In progress`, `Blocked`, `Done`
 
 A task is `Done` only when its acceptance evidence is recorded here. A phase is `Done` only when every exit criterion passes.
@@ -89,6 +89,8 @@ Exit criterion: command approvals and question pickers can be completed from the
 - [x] Preserve partial transcription when recognition fails.
 - [x] Add optional user-funded OpenRouter transcription and cleanup with one credential stored in Keychain.
 - [x] Add automatic Apple file-transcription fallback, raw-transcript cleanup fallback, and raw-text recovery in Edit.
+- [x] Keep Apple and cloud capture prepared while moving audio-session activation off the main UI actor.
+- [x] Mark every voice-originated prompt so the selected agent can resolve obvious phonetic project-name errors and clarify ambiguous terms.
 - [ ] Verify cloud transcription, cleanup, two-minute cutoff, Apple fallback, key removal, and interruption handling on a physical iPhone.
 
 Exit criterion: typed and spoken instructions reach the selected agent through the chosen dictation mode, with explicit cloud opt-in and reliable fallbacks.
@@ -177,7 +179,9 @@ Exit criterion: the external TestFlight build is approved and installed, public 
 | 2026-07-18 | Keep Apple dictation as the default and add an optional user-funded cloud pipeline | One user-supplied OpenRouter key avoids developer-funded compute; explicit opt-in preserves an on-device path and makes cloud data transfer visible |
 | 2026-07-18 | Use OpenRouter for Groq-hosted Whisper Turbo and Gemini Flash Lite cleanup, with automatic degradation | One credential covers both requests; transcription falls back to Apple's local file path, cleanup falls back to raw text, and no provider failure discards a usable transcript |
 | 2026-07-18 | Keep cloud dictation changes local until physical-device acceptance | The owner will build from Xcode and explicitly prohibited a TestFlight upload or submission for this work |
-| 2026-07-20 | Prepare the selected dictation engine before touch-down and yield once before capture startup | The starting screen can render immediately while Apple model setup or cloud recorder allocation happens during the existing ready phase; the microphone session still activates only while recording |
+| 2026-07-20 | Prepare the selected dictation engine before touch-down | Apple model setup or cloud recorder allocation happens during the existing ready phase; the later dedicated-actor change removed the scheduler yield while keeping microphone-session activation at press time |
+| 2026-07-20 | Prefix every Apple and cloud voice send with a short transcript marker | The selected coding agent can use repository context to resolve obvious phonetic names without sharing that context with cleanup providers; ambiguous terms must be clarified |
+| 2026-07-23 | Keep capture prepared but move its remaining startup work to a dedicated actor | The app does not hold an idle microphone session, while audio-session activation and recorder or engine startup can no longer block touch-down visuals and haptics on the main actor |
 
 ## Verification evidence
 
@@ -216,3 +220,5 @@ Exit criterion: the external TestFlight build is approved and installed, public 
 | 2026-07-16 | External TestFlight submission | Waiting for Review | Verified build `0.1.0 (4)` is attached to `AgentSlate Beta` with the updated Accept/Deny test notes. The open-to-anyone public link has no tester limit and will accept testers only after Apple approves the build. Production version `0.1.0` remains in Prepare for Submission. |
 | 2026-07-18 | Optional cloud dictation implementation | Automated pass; physical device pending | The iPhone 17e simulator build and all 15 app tests passed. Request tests verify OpenRouter Whisper Turbo transcription, Gemini Flash Lite cleanup, transcript-only context, zero-data-retention routing, the single credential requirement, and raw cleanup fallback. No build was uploaded or submitted. |
 | 2026-07-20 | Dictation touch-down latency reduction | Automated pass; owner device test pending | The iPhone 17e simulator ran all 15 app tests and Xcode static analysis passed. A signed device build also compiled successfully, but no app interaction was performed; the owner will verify Apple and cloud hold-to-talk startup by hand. |
+| 2026-07-20 | Voice-transcript marker | Automated pass; live-agent check pending | The iPhone 17e simulator ran all 16 app tests and Xcode static analysis passed. Coverage verifies exact marker text, normalization, blank and control-character rejection, and the final 8,192-byte payload limit. No physical-iPhone or live coding-agent behavior was exercised. |
+| 2026-07-23 | Nonblocking dictation startup | Automated pass; owner device test pending | All 16 iPhone 17e simulator tests, Xcode static analysis, and a signed generic-device build passed. Apple and cloud audio objects now run on a dedicated actor instead of the main UI actor; no physical touch-down, haptic, first-word capture, or interruption behavior was exercised. |

@@ -1255,7 +1255,7 @@ private struct VoiceReviewView: View {
   }
 
   private var validation: VoiceTextValidation {
-    validateVoiceDraftText(text)
+    validateVoicePromptText(text)
   }
 
   private var targetAvailable: Bool {
@@ -1278,7 +1278,7 @@ private struct VoiceReviewView: View {
     case .controlCharacters:
       return "Remove tabs or other control characters before sending."
     case .tooLarge:
-      return "\(validation.byteCount) of 8,192 UTF-8 bytes. Shorten the prompt to send it."
+      return "\(validation.byteCount) of 8,192 UTF-8 bytes including the voice marker. Shorten the prompt to send it."
     case nil:
       if !targetAvailable {
         return "Reconnect and reselect \(draft.agentName) in \(draft.session) to send this draft."

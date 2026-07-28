@@ -3,8 +3,7 @@ import Foundation
 import Speech
 
 /// Hold-to-talk dictation with optional user-funded cloud transcription and on-device fallback.
-@MainActor
-final class VoiceDictationController {
+actor VoiceDictationController {
   enum Failure: LocalizedError {
     case permissionDenied
     case localeNotSupported
@@ -56,8 +55,8 @@ final class VoiceDictationController {
   private var recordingURL: URL?
   private var tapInstalled = false
   private var cancellationRequested = false
-  private var onPartial: ((String) -> Void)?
-  private var onFailure: ((any Error) -> Void)?
+  private var onPartial: (@MainActor @Sendable (String) -> Void)?
+  private var onFailure: (@MainActor @Sendable (any Error) async -> Void)?
 
   init(cloudClient: CloudDictationClient = CloudDictationClient()) {
     self.cloudClient = cloudClient
@@ -132,8 +131,8 @@ final class VoiceDictationController {
 
   func start(
     mode: DictationMode,
-    onPartial: @escaping (String) -> Void,
-    onFailure: @escaping (any Error) -> Void
+    onPartial: @escaping @MainActor @Sendable (String) -> Void,
+    onFailure: @escaping @MainActor @Sendable (any Error) async -> Void
   ) async throws {
     guard !isListening else { return }
     if !isPrepared(for: mode) { try await prepare(for: mode) }
@@ -149,7 +148,7 @@ final class VoiceDictationController {
     cancellationRequested = false
     resultFailure = nil
     activeMode = mode
-    onPartial("")
+    await onPartial("")
 
     if mode.isCloud {
       do {
@@ -174,30 +173,7 @@ final class VoiceDictationController {
 
     resultsTask = Task { [weak self] in
       guard let self else { return }
-      do {
-        for try await result in transcriber.results {
-          let piece = String(result.text.characters)
-          if result.isFinal {
-            self.finalizedText += piece
-            self.volatileText = ""
-          } else {
-            self.volatileText = piece
-          }
-          let live = self.liveText
-          self.lastPartial = live
-          self.onPartial?(live)
-        }
-      } catch is CancellationError {
-        throw CancellationError()
-      } catch {
-        guard generation == self.sessionGeneration else { throw CancellationError() }
-        self.lastPartial = self.liveText.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.resultFailure = error
-        let failureHandler = self.onFailure
-        self.finishSession(for: generation, cancelResults: false)
-        failureHandler?(error)
-        throw error
-      }
+      try await self.collectLiveResults(from: transcriber, generation: generation)
     }
 
     let (sequence, builder) = AsyncStream<AnalyzerInput>.makeStream()
@@ -222,7 +198,39 @@ final class VoiceDictationController {
     isListening = true
   }
 
-  func finalize(onPhase: (CloudDictationPhase) -> Void) async throws -> DictationResult {
+  private func collectLiveResults(
+    from transcriber: DictationTranscriber,
+    generation: Int
+  ) async throws {
+    do {
+      for try await result in transcriber.results {
+        let piece = String(result.text.characters)
+        if result.isFinal {
+          finalizedText += piece
+          volatileText = ""
+        } else {
+          volatileText = piece
+        }
+        let live = liveText
+        lastPartial = live
+        await onPartial?(live)
+      }
+    } catch is CancellationError {
+      throw CancellationError()
+    } catch {
+      guard generation == sessionGeneration else { throw CancellationError() }
+      lastPartial = liveText.trimmingCharacters(in: .whitespacesAndNewlines)
+      resultFailure = error
+      let failureHandler = onFailure
+      finishSession(for: generation, cancelResults: false)
+      await failureHandler?(error)
+      throw error
+    }
+  }
+
+  func finalize(
+    onPhase: @MainActor @Sendable (CloudDictationPhase) -> Void
+  ) async throws -> DictationResult {
     guard isListening else { throw Failure.notListening }
     let generation = sessionGeneration
 
@@ -268,7 +276,7 @@ final class VoiceDictationController {
   private func finalizeCloud(
     generation: Int,
     credentials: DictationCredentials,
-    onPhase: (CloudDictationPhase) -> Void
+    onPhase: @MainActor @Sendable (CloudDictationPhase) -> Void
   ) async throws -> DictationResult {
     isListening = false
     recorder?.stop()
@@ -283,7 +291,7 @@ final class VoiceDictationController {
       if generation == sessionGeneration { self.recordingURL = nil }
     }
 
-    onPhase(.transcribing)
+    await onPhase(.transcribing)
     let rawText: String
     var notice: String?
     do {
@@ -294,7 +302,7 @@ final class VoiceDictationController {
     } catch is CancellationError {
       throw CancellationError()
     } catch {
-      onPhase(.appleFallback)
+      await onPhase(.appleFallback)
       do {
         rawText = try await transcribeAppleFile(recordingURL)
         notice = "Cloud transcription unavailable; used Apple transcription."
@@ -311,7 +319,7 @@ final class VoiceDictationController {
       throw CancellationError()
     }
 
-    onPhase(.cleaning)
+    await onPhase(.cleaning)
     let cleanedText = try? await cloudClient.cleanup(
       transcript: rawText,
       apiKey: credentials.openRouterAPIKey

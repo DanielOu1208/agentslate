@@ -184,6 +184,20 @@ func voiceDraftTextCountsEmojiUTF8Bytes() {
 }
 
 @Test
+func voicePromptMarksAndValidatesTheFinalPayload() {
+  let prompt = validateVoicePromptText("  open herder\n")
+  #expect(
+    prompt.normalizedText
+      == "[Voice transcript: Project-specific names may be phonetically misspelled. "
+        + "Infer obvious matches from the repository; clarify ambiguous ones.] open herder"
+  )
+  #expect(prompt.isValid)
+  #expect(validateVoicePromptText(" \n ").issue == .blank)
+  #expect(validateVoicePromptText("hello\tworld").issue == .controlCharacters)
+  #expect(validateVoicePromptText(String(repeating: "a", count: 8_192)).issue == .tooLarge)
+}
+
+@Test
 func voiceDraftOnlyMatchesItsOriginalSelectedTarget() {
   let draft = VoiceDraft(
     text: "review me", rawText: "review me", agentID: "agent-1", agentName: "Codex",

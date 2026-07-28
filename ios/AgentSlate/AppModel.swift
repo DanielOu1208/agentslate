@@ -91,6 +91,18 @@ func validateVoiceDraftText(_ text: String) -> VoiceTextValidation {
   return VoiceTextValidation(normalizedText: normalized, byteCount: byteCount, issue: issue)
 }
 
+func validateVoicePromptText(_ text: String) -> VoiceTextValidation {
+  let transcript = validateVoiceDraftText(text)
+  guard transcript.issue != .blank, transcript.issue != .controlCharacters else {
+    return transcript
+  }
+  return validateVoiceDraftText(
+    "[Voice transcript: Project-specific names may be phonetically misspelled. "
+      + "Infer obvious matches from the repository; clarify ambiguous ones.] "
+      + transcript.normalizedText
+  )
+}
+
 @MainActor
 @Observable
 final class AppModel {
@@ -351,7 +363,7 @@ final class AppModel {
 
   @discardableResult
   func sendVoiceDraft(_ draft: VoiceDraft, text: String) async -> Bool {
-    let validation = validateVoiceDraftText(text)
+    let validation = validateVoicePromptText(text)
     guard validation.isValid,
       draft.matches(
         agentID: selectedAgentID, session: selectedSessionName, available: canSend)
@@ -460,7 +472,7 @@ final class AppModel {
       }
     } catch {
       if generation == voiceSessionGeneration {
-        handleVoiceFailure(error)
+        await handleVoiceFailure(error)
       }
     }
   }
@@ -484,7 +496,6 @@ final class AppModel {
     voiceStartTask = Task { [weak self] in
       guard let self else { return }
       do {
-        await Task.yield()
         try Task.checkCancellation()
         try await self.dictation.start(
           mode: mode,
@@ -494,7 +505,7 @@ final class AppModel {
           },
           onFailure: { [weak self] error in
             guard let self, generation == self.voiceSessionGeneration else { return }
-            self.handleVoiceFailure(error)
+            await self.handleVoiceFailure(error)
           }
         )
         try Task.checkCancellation()
@@ -517,12 +528,12 @@ final class AppModel {
       } catch is CancellationError {
         await self.dictation.cancel()
         if generation == self.voiceSessionGeneration {
-          self.voiceState =
-            self.dictation.isPrepared(for: self.dictationMode) ? .ready : .notPrepared
+          let prepared = await self.dictation.isPrepared(for: self.dictationMode)
+          self.voiceState = prepared ? .ready : .notPrepared
         }
       } catch {
         if generation == self.voiceSessionGeneration {
-          self.handleVoiceFailure(error)
+          await self.handleVoiceFailure(error)
         }
       }
       if generation == self.voiceSessionGeneration {
@@ -554,7 +565,8 @@ final class AppModel {
     if let voiceStartTask {
       await voiceStartTask.value
     }
-    guard generation == voiceSessionGeneration, dictation.isListening else { return }
+    let isListening = await dictation.isListening
+    guard generation == voiceSessionGeneration, isListening else { return }
     do {
       let task = Task { [weak self] () throws -> DictationResult in
         guard let self else { throw CancellationError() }
@@ -572,19 +584,20 @@ final class AppModel {
       let result = try await task.value
       voiceProcessingTask = nil
       guard generation == voiceSessionGeneration, !Task.isCancelled else { return }
-      let validation = validateVoiceDraftText(result.text)
+      let transcriptValidation = validateVoiceDraftText(result.text)
+      let promptValidation = validateVoicePromptText(result.text)
       if let voiceTarget {
-        if action == .edit || validation.issue == .controlCharacters
-          || validation.issue == .tooLarge
+        if action == .edit || promptValidation.issue == .controlCharacters
+          || promptValidation.issue == .tooLarge
         {
           voiceDraft = VoiceDraft(
-            text: validation.normalizedText,
+            text: transcriptValidation.normalizedText,
             rawText: result.rawText,
             agentID: voiceTarget.agentID,
             agentName: voiceTarget.agentName,
             session: voiceTarget.session
           )
-        } else if validation.isValid,
+        } else if promptValidation.isValid,
           canSend,
           selectedAgentID == voiceTarget.agentID,
           selectedSessionName == voiceTarget.session
@@ -593,7 +606,7 @@ final class AppModel {
             successFeedback += 1
           } else if let client {
             _ = await send(
-              text: validation.normalizedText,
+              text: promptValidation.normalizedText,
               submit: true,
               to: voiceTarget.agentID,
               session: voiceTarget.session,
@@ -615,13 +628,14 @@ final class AppModel {
     } catch is CancellationError {
       voiceProcessingTask = nil
       if generation == voiceSessionGeneration {
-        voiceState = dictation.isPrepared(for: dictationMode) ? .ready : .notPrepared
+        let prepared = await dictation.isPrepared(for: dictationMode)
+        voiceState = prepared ? .ready : .notPrepared
         voiceTarget = nil
       }
     } catch {
       voiceProcessingTask = nil
       if generation == voiceSessionGeneration {
-        handleVoiceFailure(error)
+        await handleVoiceFailure(error)
       }
     }
   }
@@ -776,9 +790,9 @@ final class AppModel {
     errorFeedback += 1
   }
 
-  private func handleVoiceFailure(_ error: any Error) {
+  private func handleVoiceFailure(_ error: any Error) async {
     let failedState = VoiceState.failed(error.localizedDescription)
-    partialTranscript = dictation.lastPartial
+    partialTranscript = await dictation.lastPartial
     if voiceState != failedState { errorFeedback += 1 }
     voiceState = failedState
     voiceTarget = nil
