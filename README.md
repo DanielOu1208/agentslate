@@ -6,6 +6,9 @@
     An iPhone remote keypad for supervising coding agents running in
     <a href="https://herdr.dev/">Herdr</a> on your Mac.
   </p>
+  <p>
+    <a href="https://testflight.apple.com/join/T1bCGkH6"><strong>Join the TestFlight beta</strong></a>
+  </p>
 </div>
 
 <p align="center">
