@@ -1,6 +1,6 @@
 # AgentSlate Implementation Tracker
 
-Last updated: 2026-07-23
+Last updated: 2026-07-31
 Allowed states: `Not started`, `In progress`, `Blocked`, `Done`
 
 A task is `Done` only when its acceptance evidence is recorded here. A phase is `Done` only when every exit criterion passes.
@@ -90,6 +90,7 @@ Exit criterion: command approvals and question pickers can be completed from the
 - [x] Add optional user-funded OpenRouter transcription and cleanup with one credential stored in Keychain.
 - [x] Add automatic Apple file-transcription fallback, raw-transcript cleanup fallback, and raw-text recovery in Edit.
 - [x] Keep Apple and cloud capture prepared while moving audio-session activation off the main UI actor.
+- [x] Isolate cleanup behind a rewrite-only system prompt that treats transcript content as data.
 - [x] Mark every voice-originated prompt so the selected agent can resolve obvious phonetic project-name errors and clarify ambiguous terms.
 - [ ] Verify cloud transcription, cleanup, two-minute cutoff, Apple fallback, key removal, and interruption handling on a physical iPhone.
 
@@ -222,3 +223,4 @@ Exit criterion: the external TestFlight build is approved and installed, public 
 | 2026-07-20 | Dictation touch-down latency reduction | Automated pass; owner device test pending | The iPhone 17e simulator ran all 15 app tests and Xcode static analysis passed. A signed device build also compiled successfully, but no app interaction was performed; the owner will verify Apple and cloud hold-to-talk startup by hand. |
 | 2026-07-20 | Voice-transcript marker | Automated pass; live-agent check pending | The iPhone 17e simulator ran all 16 app tests and Xcode static analysis passed. Coverage verifies exact marker text, normalization, blank and control-character rejection, and the final 8,192-byte payload limit. No physical-iPhone or live coding-agent behavior was exercised. |
 | 2026-07-23 | Nonblocking dictation startup | Automated pass; owner device test pending | All 16 iPhone 17e simulator tests, Xcode static analysis, and a signed generic-device build passed. Apple and cloud audio objects now run on a dedicated actor instead of the main UI actor; no physical touch-down, haptic, first-word capture, or interruption behavior was exercised. |
+| 2026-07-31 | Rewrite-only cleanup prompt | Automated pass; live Gemini pending | Cleanup treats the transcript as untrusted data, permits rephrasing, and instructs Gemini to rewrite rather than answer or act on it; request failures and invalid text still fall back to the raw transcript. All 17 iPhone 17 Pro Max simulator tests pass; live Gemini cleanup remains for owner testing. |

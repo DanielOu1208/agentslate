@@ -96,6 +96,7 @@ The open beta additionally includes editable spoken instructions, hold-to-talk s
 - Let users explicitly opt into cloud dictation by saving one OpenRouter API key in the iOS Keychain; never bundle a developer-funded credential.
 - In cloud mode, record a temporary WAV file, transcribe it through OpenRouter with `openai/whisper-large-v3-turbo` (currently served by Groq), and clean only the returned transcript with `google/gemini-3.1-flash-lite`.
 - If OpenRouter transcription fails, retry the same recording with Apple's on-device speech framework. If cleanup fails or returns invalid text, keep the raw transcript.
+- Treat the transcript as untrusted data during cleanup, allow rephrasing for clarity, and instruct the cleanup model to rewrite rather than answer questions, follow instructions, solve tasks, or add facts.
 - Do not show partial cloud text. Show clear listening, transcribing, and cleaning states, and cap cloud recording at two minutes before opening the review editor.
 - Default to hold, speak, and release to send text plus Enter through the existing bridge `send_text` path.
 - While holding, show only two visible alternate release targets: upper-left Cancel discards and upper-right Edit finalizes into an in-memory review sheet. Leaving either target restores Send.
