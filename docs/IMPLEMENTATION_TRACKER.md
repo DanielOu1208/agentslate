@@ -74,6 +74,7 @@ Exit criterion: the authenticated probe lists current agents and safely operates
 - [x] Add a native header menu that remembers and safely falls back between running Herdr sessions.
 - [x] Add a connected D-pad, Enter, Tab, haptics, and disconnected-state disabling.
 - [x] Add dedicated Escape and Shift+Tab keys.
+- [ ] Verify the app-side enhanced Shift+Tab sequence against Codex on a physical device.
 - [x] Add working Accept and Deny shortcuts for blocked Codex, Claude Code, OMP, Cursor, and OpenCode agents; keep blank-agent slots local-only.
 - [ ] Verify at least three simultaneous agents on a physical iPhone.
 
@@ -88,11 +89,14 @@ Exit criterion: command approvals and question pickers can be completed from the
 - [x] Add review-before-send with automatic Enter.
 - [x] Preserve partial transcription when recognition fails.
 - [x] Add optional user-funded OpenRouter transcription and cleanup with one credential stored in Keychain.
+- [x] Add Soniox `stt-rt-v5` as a separate user-funded real-time engine with live provisional text and its own Keychain credential.
+- [x] Replace the cloud toggle with an explicit Apple/OpenRouter/Soniox engine choice and optional cleanup for both cloud engines.
 - [x] Add automatic Apple file-transcription fallback, raw-transcript cleanup fallback, and raw-text recovery in Edit.
 - [x] Keep Apple and cloud capture prepared while moving audio-session activation off the main UI actor.
-- [x] Isolate cleanup behind a rewrite-only system prompt that treats transcript content as data.
+- [x] Enter the talking presentation on native microphone touch-down and isolate cleanup behind a rewrite-only system prompt.
+- [x] Add a ten-bar microphone-level meter that reuses both existing audio capture paths.
 - [x] Mark every voice-originated prompt so the selected agent can resolve obvious phonetic project-name errors and clarify ambiguous terms.
-- [ ] Verify cloud transcription, cleanup, two-minute cutoff, Apple fallback, key removal, and interruption handling on a physical iPhone.
+- [ ] Verify OpenRouter and Soniox transcription, live Soniox text, cleanup on/off, two-minute cutoff, Apple fallback, key removal, and interruption handling on a physical iPhone.
 
 Exit criterion: typed and spoken instructions reach the selected agent through the chosen dictation mode, with explicit cloud opt-in and reliable fallbacks.
 
@@ -183,6 +187,11 @@ Exit criterion: the external TestFlight build is approved and installed, public 
 | 2026-07-20 | Prepare the selected dictation engine before touch-down | Apple model setup or cloud recorder allocation happens during the existing ready phase; the later dedicated-actor change removed the scheduler yield while keeping microphone-session activation at press time |
 | 2026-07-20 | Prefix every Apple and cloud voice send with a short transcript marker | The selected coding agent can use repository context to resolve obvious phonetic names without sharing that context with cleanup providers; ambiguous terms must be clarified |
 | 2026-07-23 | Keep capture prepared but move its remaining startup work to a dedicated actor | The app does not hold an idle microphone session, while audio-session activation and recorder or engine startup can no longer block touch-down visuals and haptics on the main actor |
+| 2026-07-28 | Reuse the active capture path for the audio meter | Apple buffers and cloud recorder metering already expose the needed signal, so a second recorder, persisted samples, and a visualizer dependency are unnecessary |
+| 2026-07-28 | Keep the Shift+Tab fix inside AgentSlate and scope it to Codex | The bridge sends Codex the enhanced-keyboard sequence a physical Shift+Tab produces, while every other agent keeps the existing Herdr key route |
+| 2026-07-31 | Treat Soniox v5 as the non-Whisper alternative and keep three explicit engines | Apple stays the local default, existing cloud users migrate to OpenRouter, and saving a provider key never silently changes the active engine |
+| 2026-07-31 | Make cleanup optional for both cloud engines but never explicit Apple mode | Cleanup defaults on and uses the saved OpenRouter key; Soniox remains usable without that key, while cloud-mode Apple fallback follows the selected cleanup setting |
+| 2026-07-31 | Stream Soniox directly with a user-supplied long-lived key | The local-first app adds no backend or SDK; one microphone stream feeds Soniox, the existing meter, and a temporary Apple-fallback WAV that is always deleted |
 
 ## Verification evidence
 
@@ -223,4 +232,7 @@ Exit criterion: the external TestFlight build is approved and installed, public 
 | 2026-07-20 | Dictation touch-down latency reduction | Automated pass; owner device test pending | The iPhone 17e simulator ran all 15 app tests and Xcode static analysis passed. A signed device build also compiled successfully, but no app interaction was performed; the owner will verify Apple and cloud hold-to-talk startup by hand. |
 | 2026-07-20 | Voice-transcript marker | Automated pass; live-agent check pending | The iPhone 17e simulator ran all 16 app tests and Xcode static analysis passed. Coverage verifies exact marker text, normalization, blank and control-character rejection, and the final 8,192-byte payload limit. No physical-iPhone or live coding-agent behavior was exercised. |
 | 2026-07-23 | Nonblocking dictation startup | Automated pass; owner device test pending | All 16 iPhone 17e simulator tests, Xcode static analysis, and a signed generic-device build passed. Apple and cloud audio objects now run on a dedicated actor instead of the main UI actor; no physical touch-down, haptic, first-word capture, or interruption behavior was exercised. |
-| 2026-07-31 | Rewrite-only cleanup prompt | Automated pass; live Gemini pending | Cleanup treats the transcript as untrusted data, permits rephrasing, and instructs Gemini to rewrite rather than answer or act on it; request failures and invalid text still fall back to the raw transcript. All 17 iPhone 17 Pro Max simulator tests pass; live Gemini cleanup remains for owner testing. |
+| 2026-07-28 | Immediate voice entry and rewrite-only cleanup | Automated pass; owner device test pending | The microphone now begins from a zero-duration native long-press recognizer. Cleanup treats the transcript as untrusted data, permits rephrasing, and instructs Gemini to rewrite rather than answer or act on it; request failures and invalid text still fall back to the raw transcript. All 17 iPhone 17 Pro Max simulator tests pass; physical touch-down, haptic timing, drag targets, VoiceOver, and live Gemini cleanup remain for owner testing. |
+| 2026-07-28 | Ten-bar microphone meter | Automated pass; physical audio pending | The Apple tap computes RMS from its existing buffer, cloud recording samples native recorder metering at 20 Hz, and both feed one transient UI level. All 17 iPhone 17e simulator tests pass; real microphone sensitivity, silence, Reduce Motion, and audio-thread stability remain for physical-iPhone review. |
+| 2026-07-28 | Codex Shift+Tab app fix | Automated pass; physical Codex pending | The bridge now sends Codex `Esc [ 9 ; 2 u` through Herdr's existing raw-input endpoint and preserves normal `shift+tab` key forwarding for other agents. Rust route coverage passes; live phone-to-Codex acceptance remains pending. |
+| 2026-07-31 | Soniox v5 real-time dictation | Automated pass; owner device test pending | All 20 iPhone 17e simulator app tests, Xcode static analysis, a generic-device build, and all 21 Swift package tests passed. No physical microphone interaction, live Soniox/OpenRouter request, or cloud-to-Apple fallback was exercised. |

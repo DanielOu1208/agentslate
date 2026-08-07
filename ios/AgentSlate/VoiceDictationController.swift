@@ -2,6 +2,22 @@
 import Foundation
 import Speech
 
+func normalizedAudioLevel(decibels: Float) -> Double {
+  guard decibels.isFinite else { return 0 }
+  return Double(min(max((decibels + 50) / 50, 0), 1))
+}
+
+private func audioLevel(for buffer: AVAudioPCMBuffer) -> Double {
+  guard let samples = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return 0 }
+  let count = Int(buffer.frameLength)
+  var squareSum: Float = 0
+  for index in 0..<count {
+    squareSum += samples[index] * samples[index]
+  }
+  let rootMeanSquare = sqrt(squareSum / Float(count))
+  return normalizedAudioLevel(decibels: rootMeanSquare > 0 ? 20 * log10(rootMeanSquare) : -50)
+}
+
 /// Hold-to-talk dictation with optional user-funded cloud transcription and on-device fallback.
 actor VoiceDictationController {
   enum Failure: LocalizedError {
@@ -39,6 +55,7 @@ actor VoiceDictationController {
 
   private let audioEngine = AVAudioEngine()
   private let cloudClient: CloudDictationClient
+  private let sonioxClient: SonioxRealtimeClient
   private var transcriber: DictationTranscriber?
   private var analyzer: SpeechAnalyzer?
   private var inputBuilder: AsyncStream<AnalyzerInput>.Continuation?
@@ -53,21 +70,35 @@ actor VoiceDictationController {
   private var activeMode: DictationMode = .apple
   private var recorder: AVAudioRecorder?
   private var recordingURL: URL?
+  private var sonioxFormat: AVAudioFormat?
+  private var sonioxFile: AVAudioFile?
+  private var sonioxSink: SonioxAudioSink?
+  private var sonioxTask: Task<String, any Error>?
+  private var meterTask: Task<Void, Never>?
   private var tapInstalled = false
   private var cancellationRequested = false
   private var onPartial: (@MainActor @Sendable (String) -> Void)?
+  private var onLevel: (@MainActor @Sendable (Double) -> Void)?
   private var onFailure: (@MainActor @Sendable (any Error) async -> Void)?
 
-  init(cloudClient: CloudDictationClient = CloudDictationClient()) {
+  init(
+    cloudClient: CloudDictationClient = CloudDictationClient(),
+    sonioxClient: SonioxRealtimeClient = SonioxRealtimeClient()
+  ) {
     self.cloudClient = cloudClient
+    self.sonioxClient = sonioxClient
   }
 
   func isPrepared(for mode: DictationMode) -> Bool {
     guard microphonePrepared else { return false }
-    if mode.isCloud {
-      return recorder != nil && recordingURL != nil
+    return switch mode {
+    case .apple:
+      applePrepared && transcriber != nil && analyzer != nil && analyzerFormat != nil
+    case .openRouter:
+      recorder != nil && recordingURL != nil
+    case .soniox:
+      sonioxFormat != nil && sonioxFile != nil && sonioxSink == nil && recordingURL != nil
     }
-    return applePrepared && transcriber != nil && analyzer != nil && analyzerFormat != nil
   }
 
   func prepare(for mode: DictationMode) async throws {
@@ -80,10 +111,13 @@ actor VoiceDictationController {
     try Task.checkCancellation()
     try configureAudioSession()
 
-    if mode.isCloud {
-      try prepareCloudRecording()
-    } else {
+    switch mode {
+    case .apple:
       try await prepareAppleCapture()
+    case .openRouter:
+      try prepareCloudRecording()
+    case .soniox:
+      try prepareSonioxRecording()
     }
   }
 
@@ -132,6 +166,7 @@ actor VoiceDictationController {
   func start(
     mode: DictationMode,
     onPartial: @escaping @MainActor @Sendable (String) -> Void,
+    onLevel: @escaping @MainActor @Sendable (Double) -> Void,
     onFailure: @escaping @MainActor @Sendable (any Error) async -> Void
   ) async throws {
     guard !isListening else { return }
@@ -141,6 +176,7 @@ actor VoiceDictationController {
     sessionGeneration &+= 1
     let generation = sessionGeneration
     self.onPartial = onPartial
+    self.onLevel = onLevel
     self.onFailure = onFailure
     finalizedText = ""
     volatileText = ""
@@ -149,10 +185,23 @@ actor VoiceDictationController {
     resultFailure = nil
     activeMode = mode
     await onPartial("")
+    await onLevel(0)
 
-    if mode.isCloud {
+    switch mode {
+    case .openRouter:
       do {
         try startCloudRecording()
+        isListening = true
+        startCloudMetering(generation: generation)
+      } catch {
+        discardRecording()
+        finishSession(for: generation)
+        throw Failure.audioSetupFailed
+      }
+      return
+    case .soniox(let apiKey, _):
+      do {
+        try startSonioxRecording(apiKey: apiKey, generation: generation)
         isListening = true
       } catch {
         discardRecording()
@@ -160,9 +209,9 @@ actor VoiceDictationController {
         throw Failure.audioSetupFailed
       }
       return
+    case .apple:
+      try await startAppleCapture(generation: generation)
     }
-
-    try await startAppleCapture(generation: generation)
   }
 
   private func startAppleCapture(generation: Int) async throws {
@@ -234,16 +283,24 @@ actor VoiceDictationController {
     guard isListening else { throw Failure.notListening }
     let generation = sessionGeneration
 
-    if case .cloud(let credentials) = activeMode {
-      return try await finalizeCloud(
+    switch activeMode {
+    case .apple:
+      let text = try await finalizeAppleCapture(generation: generation)
+      return DictationResult(rawText: text, text: text, fallbackNotice: nil)
+    case .openRouter(let apiKey, let cleanupEnabled):
+      return try await finalizeOpenRouter(
         generation: generation,
-        credentials: credentials,
+        apiKey: apiKey,
+        cleanupAPIKey: cleanupEnabled ? apiKey : nil,
+        onPhase: onPhase
+      )
+    case .soniox(_, let cleanupAPIKey):
+      return try await finalizeSoniox(
+        generation: generation,
+        cleanupAPIKey: cleanupAPIKey,
         onPhase: onPhase
       )
     }
-
-    let text = try await finalizeAppleCapture(generation: generation)
-    return DictationResult(rawText: text, text: text, fallbackNotice: nil)
   }
 
   private func finalizeAppleCapture(generation: Int) async throws -> String {
@@ -273,12 +330,14 @@ actor VoiceDictationController {
     }
   }
 
-  private func finalizeCloud(
+  private func finalizeOpenRouter(
     generation: Int,
-    credentials: DictationCredentials,
+    apiKey: String,
+    cleanupAPIKey: String?,
     onPhase: @MainActor @Sendable (CloudDictationPhase) -> Void
   ) async throws -> DictationResult {
     isListening = false
+    stopMetering()
     recorder?.stop()
     recorder = nil
     try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
@@ -297,7 +356,7 @@ actor VoiceDictationController {
     do {
       rawText = try await cloudClient.transcribe(
         audioURL: recordingURL,
-        apiKey: credentials.openRouterAPIKey
+        apiKey: apiKey
       )
     } catch is CancellationError {
       throw CancellationError()
@@ -305,7 +364,7 @@ actor VoiceDictationController {
       await onPhase(.appleFallback)
       do {
         rawText = try await transcribeAppleFile(recordingURL)
-        notice = "Cloud transcription unavailable; used Apple transcription."
+        notice = "OpenRouter transcription unavailable; used Apple transcription."
       } catch is CancellationError {
         throw CancellationError()
       } catch {
@@ -314,28 +373,104 @@ actor VoiceDictationController {
       }
     }
 
-    try Task.checkCancellation()
-    guard generation == sessionGeneration, !cancellationRequested else {
-      throw CancellationError()
-    }
-
-    await onPhase(.cleaning)
-    let cleanedText = try? await cloudClient.cleanup(
-      transcript: rawText,
-      apiKey: credentials.openRouterAPIKey
+    return try await finishCloudResult(
+      rawText: rawText,
+      cleanupAPIKey: cleanupAPIKey,
+      notice: notice,
+      generation: generation,
+      onPhase: onPhase
     )
+  }
+
+  private func finalizeSoniox(
+    generation: Int,
+    cleanupAPIKey: String?,
+    onPhase: @MainActor @Sendable (CloudDictationPhase) -> Void
+  ) async throws -> DictationResult {
+    isListening = false
+    let sinkFailed = sonioxSink?.failed ?? true
+    stopCapture()
+    sonioxSink = nil
+    sonioxFile = nil
+    try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    guard let recordingURL, let sonioxTask else {
+      finishSession(for: generation)
+      throw Failure.audioSetupFailed
+    }
+    self.sonioxTask = nil
+    defer {
+      try? FileManager.default.removeItem(at: recordingURL)
+      if generation == sessionGeneration { self.recordingURL = nil }
+    }
+
+    let rawText: String
+    var notice: String?
+    do {
+      guard !sinkFailed else { throw Failure.transcriptionFailed }
+      rawText = try await withTaskCancellationHandler {
+        try await sonioxTask.value
+      } onCancel: {
+        sonioxTask.cancel()
+      }
+    } catch is CancellationError {
+      throw CancellationError()
+    } catch {
+      await onPhase(.appleFallback)
+      do {
+        rawText = try await transcribeAppleFile(recordingURL)
+        notice = "Soniox unavailable; used Apple transcription."
+      } catch is CancellationError {
+        throw CancellationError()
+      } catch {
+        finishSession(for: generation)
+        throw Failure.transcriptionFailed
+      }
+    }
+
+    return try await finishCloudResult(
+      rawText: rawText,
+      cleanupAPIKey: cleanupAPIKey,
+      notice: notice,
+      generation: generation,
+      onPhase: onPhase
+    )
+  }
+
+  private func finishCloudResult(
+    rawText: String,
+    cleanupAPIKey: String?,
+    notice: String?,
+    generation: Int,
+    onPhase: @MainActor @Sendable (CloudDictationPhase) -> Void
+  ) async throws -> DictationResult {
     try Task.checkCancellation()
     guard generation == sessionGeneration, !cancellationRequested else {
       throw CancellationError()
     }
 
-    let cleanup = resolveCleanup(rawText: rawText, cleanedText: cleanedText)
-    if let cleanupNotice = cleanup.fallbackNotice {
-      notice = notice.map { "\($0) \(cleanupNotice)" } ?? cleanupNotice
+    var resultText = rawText
+    var resultNotice = notice
+    if let cleanupAPIKey {
+      await onPhase(.cleaning)
+      let cleanedText = try? await cloudClient.cleanup(
+        transcript: rawText,
+        apiKey: cleanupAPIKey
+      )
+      try Task.checkCancellation()
+      guard generation == sessionGeneration, !cancellationRequested else {
+        throw CancellationError()
+      }
+
+      let cleanup = resolveCleanup(rawText: rawText, cleanedText: cleanedText)
+      resultText = cleanup.text
+      if let cleanupNotice = cleanup.fallbackNotice {
+        resultNotice = resultNotice.map { "\($0) \(cleanupNotice)" } ?? cleanupNotice
+      }
     }
-    lastPartial = cleanup.text
+
+    lastPartial = resultText
     finishSession(for: generation)
-    return DictationResult(rawText: rawText, text: cleanup.text, fallbackNotice: notice)
+    return DictationResult(rawText: rawText, text: resultText, fallbackNotice: resultNotice)
   }
 
   func cancel() async {
@@ -343,7 +478,10 @@ actor VoiceDictationController {
     let analyzer = analyzer
     let resultsTask = resultsTask
     cancellationRequested = true
-    guard isListening || analyzer != nil || recorder != nil || recordingURL != nil else {
+    guard
+      isListening || analyzer != nil || recorder != nil || sonioxTask != nil
+        || recordingURL != nil
+    else {
       finishSession(for: generation)
       return
     }
@@ -360,6 +498,7 @@ actor VoiceDictationController {
 
   private func finishSession(for generation: Int, cancelResults: Bool = true) {
     guard generation == sessionGeneration else { return }
+    stopMetering()
     stopCapture()
     if cancelResults { resultsTask?.cancel() }
     resultsTask = nil
@@ -367,7 +506,14 @@ actor VoiceDictationController {
     transcriber = nil
     analyzerFormat = nil
     recorder = nil
+    sonioxSink?.finish()
+    sonioxSink = nil
+    sonioxTask?.cancel()
+    sonioxTask = nil
+    sonioxFile = nil
+    sonioxFormat = nil
     onPartial = nil
+    onLevel = nil
     onFailure = nil
     isListening = false
     try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
@@ -381,6 +527,7 @@ actor VoiceDictationController {
     }
     inputBuilder?.finish()
     inputBuilder = nil
+    sonioxSink?.finish()
   }
 
   private func makeTranscriber(locale: Locale) -> DictationTranscriber {
@@ -415,6 +562,7 @@ actor VoiceDictationController {
         AVLinearPCMIsFloatKey: false,
         AVLinearPCMIsBigEndianKey: false,
       ])
+    recorder.isMeteringEnabled = true
     guard recorder.prepareToRecord() else {
       try? FileManager.default.removeItem(at: url)
       throw Failure.audioSetupFailed
@@ -429,9 +577,106 @@ actor VoiceDictationController {
     guard recorder.record() else { throw Failure.audioSetupFailed }
   }
 
+  private func prepareSonioxRecording() throws {
+    guard sonioxFile == nil, sonioxFormat == nil, recordingURL == nil else { return }
+    guard
+      let format = AVAudioFormat(
+        commonFormat: .pcmFormatInt16,
+        sampleRate: 16_000,
+        channels: 1,
+        interleaved: true
+      )
+    else {
+      throw Failure.audioSetupFailed
+    }
+    let url = FileManager.default.temporaryDirectory
+      .appendingPathComponent("agentslate-soniox-\(UUID().uuidString)")
+      .appendingPathExtension("wav")
+    do {
+      sonioxFile = try AVAudioFile(
+        forWriting: url,
+        settings: format.settings,
+        commonFormat: .pcmFormatInt16,
+        interleaved: true
+      )
+      sonioxFormat = format
+      recordingURL = url
+    } catch {
+      try? FileManager.default.removeItem(at: url)
+      throw Failure.audioSetupFailed
+    }
+  }
+
+  private func startSonioxRecording(apiKey: String, generation: Int) throws {
+    guard let sonioxFile, let sonioxFormat, recordingURL != nil else {
+      throw Failure.audioSetupFailed
+    }
+    let (audio, builder) = AsyncStream<Data>.makeStream()
+    let sink = SonioxAudioSink(format: sonioxFormat, file: sonioxFile, builder: builder)
+    sonioxSink = sink
+    sonioxTask = Task { [weak self] in
+      guard let self else { throw CancellationError() }
+      return try await self.sonioxClient.transcribe(
+        apiKey: apiKey,
+        audio: audio,
+        onPartial: { [weak self] text in
+          await self?.receiveSonioxPartial(text, generation: generation)
+        }
+      )
+    }
+
+    try setupAudioSession()
+    let levelHandler = onLevel
+    let input = audioEngine.inputNode
+    let micFormat = input.outputFormat(forBus: 0)
+    input.installTap(onBus: 0, bufferSize: 4096, format: micFormat) { @Sendable buffer, _ in
+      let level = audioLevel(for: buffer)
+      Task { @MainActor in levelHandler?(level) }
+      sink.process(buffer)
+    }
+    tapInstalled = true
+    audioEngine.prepare()
+    try audioEngine.start()
+  }
+
+  private func receiveSonioxPartial(_ text: String, generation: Int) async {
+    guard generation == sessionGeneration, isListening else { return }
+    lastPartial = text
+    await onPartial?(text)
+  }
+
+  private func startCloudMetering(generation: Int) {
+    meterTask?.cancel()
+    meterTask = Task { [weak self] in
+      while !Task.isCancelled {
+        guard let self else { return }
+        await self.reportCloudLevel(generation: generation)
+        try? await Task.sleep(for: .milliseconds(50))
+      }
+    }
+  }
+
+  private func reportCloudLevel(generation: Int) async {
+    guard generation == sessionGeneration, isListening, let recorder else { return }
+    recorder.updateMeters()
+    await onLevel?(normalizedAudioLevel(decibels: recorder.averagePower(forChannel: 0)))
+  }
+
+  private func stopMetering() {
+    meterTask?.cancel()
+    meterTask = nil
+  }
+
   private func discardRecording() {
+    stopMetering()
     recorder?.stop()
     recorder = nil
+    sonioxSink?.finish()
+    sonioxTask?.cancel()
+    sonioxTask = nil
+    sonioxSink = nil
+    sonioxFile = nil
+    sonioxFormat = nil
     if let recordingURL {
       try? FileManager.default.removeItem(at: recordingURL)
       self.recordingURL = nil
@@ -511,10 +756,13 @@ actor VoiceDictationController {
     }
 
     let converter = AudioBufferConverter()
+    let levelHandler = onLevel
     let input = audioEngine.inputNode
     let micFormat = input.outputFormat(forBus: 0)
 
     input.installTap(onBus: 0, bufferSize: 4096, format: micFormat) { @Sendable buffer, _ in
+      let level = audioLevel(for: buffer)
+      Task { @MainActor in levelHandler?(level) }
       guard let converted = try? converter.convert(buffer, to: target) else { return }
       builder.yield(AnalyzerInput(buffer: converted))
     }
@@ -522,6 +770,48 @@ actor VoiceDictationController {
 
     audioEngine.prepare()
     try audioEngine.start()
+  }
+}
+
+/// Converts and fans out one Soniox capture stream to the socket and Apple fallback file.
+private final class SonioxAudioSink: @unchecked Sendable {
+  private let converter = AudioBufferConverter()
+  private let format: AVAudioFormat
+  private let file: AVAudioFile
+  private let builder: AsyncStream<Data>.Continuation
+  private let failureLock = NSLock()
+  private var hasFailed = false
+
+  init(
+    format: AVAudioFormat,
+    file: AVAudioFile,
+    builder: AsyncStream<Data>.Continuation
+  ) {
+    self.format = format
+    self.file = file
+    self.builder = builder
+  }
+
+  var failed: Bool {
+    failureLock.withLock { hasFailed }
+  }
+
+  func process(_ buffer: AVAudioPCMBuffer) {
+    guard !failed else { return }
+    do {
+      let converted = try converter.convert(buffer, to: format)
+      try file.write(from: converted)
+      let audioBuffer = converted.audioBufferList.pointee.mBuffers
+      guard let bytes = audioBuffer.mData, audioBuffer.mDataByteSize > 0 else { return }
+      builder.yield(Data(bytes: bytes, count: Int(audioBuffer.mDataByteSize)))
+    } catch {
+      failureLock.withLock { hasFailed = true }
+      builder.finish()
+    }
+  }
+
+  func finish() {
+    builder.finish()
   }
 }
 

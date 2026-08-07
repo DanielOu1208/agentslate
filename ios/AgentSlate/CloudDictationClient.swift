@@ -2,23 +2,43 @@ import Foundation
 
 struct DictationCredentials: Codable, Equatable, Sendable {
   let openRouterAPIKey: String
+  let sonioxAPIKey: String
 
-  init(openRouterAPIKey: String) {
+  init(openRouterAPIKey: String = "", sonioxAPIKey: String = "") {
     self.openRouterAPIKey = openRouterAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.sonioxAPIKey = sonioxAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
-  var isComplete: Bool {
-    !openRouterAPIKey.isEmpty
+  var hasOpenRouterKey: Bool { !openRouterAPIKey.isEmpty }
+  var hasSonioxKey: Bool { !sonioxAPIKey.isEmpty }
+  var isEmpty: Bool { !hasOpenRouterKey && !hasSonioxKey }
+
+  private enum CodingKeys: String, CodingKey {
+    case openRouterAPIKey, sonioxAPIKey
   }
+
+  init(from decoder: any Decoder) throws {
+    let values = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      openRouterAPIKey: try values.decodeIfPresent(String.self, forKey: .openRouterAPIKey) ?? "",
+      sonioxAPIKey: try values.decodeIfPresent(String.self, forKey: .sonioxAPIKey) ?? ""
+    )
+  }
+}
+
+enum DictationEngine: String, CaseIterable, Equatable, Sendable {
+  case apple
+  case openRouter
+  case soniox
 }
 
 enum DictationMode: Equatable, Sendable {
   case apple
-  case cloud(DictationCredentials)
+  case openRouter(apiKey: String, cleanupEnabled: Bool)
+  case soniox(apiKey: String, cleanupAPIKey: String?)
 
   var isCloud: Bool {
-    if case .cloud = self { return true }
-    return false
+    self != .apple
   }
 }
 

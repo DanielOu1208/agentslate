@@ -103,6 +103,24 @@ func validateVoicePromptText(_ text: String) -> VoiceTextValidation {
   )
 }
 
+func resolveDictationEngine(
+  savedValue: String?,
+  legacyCloudEnabled: Bool,
+  credentials: DictationCredentials?,
+  openRouterConsentGranted: Bool,
+  sonioxConsentGranted: Bool
+) -> DictationEngine {
+  if let savedValue, let saved = DictationEngine(rawValue: savedValue) {
+    return switch saved {
+    case .openRouter
+    where credentials?.hasOpenRouterKey != true || !openRouterConsentGranted: .apple
+    case .soniox where credentials?.hasSonioxKey != true || !sonioxConsentGranted: .apple
+    default: saved
+    }
+  }
+  return legacyCloudEnabled && credentials?.hasOpenRouterKey == true ? .openRouter : .apple
+}
+
 @MainActor
 @Observable
 final class AppModel {
@@ -121,9 +139,11 @@ final class AppModel {
   private(set) var isDemoMode = false
   private(set) var voiceState: VoiceState = .notPrepared
   private(set) var partialTranscript = ""
+  private(set) var voiceLevel = 0.0
   private(set) var voiceDraft: VoiceDraft?
   private(set) var dictationCredentials: DictationCredentials?
-  private(set) var cloudDictationEnabled: Bool
+  private(set) var dictationEngine: DictationEngine
+  private(set) var cloudCleanupEnabled: Bool
 
   @ObservationIgnored private var client: BridgeClient?
   @ObservationIgnored private var eventTask: Task<Void, Never>?
@@ -144,29 +164,55 @@ final class AppModel {
     configuredCredential: BridgeCredential? = KeychainStore.loadBridge(),
     selectedSessionName: String? = UserDefaults.standard.string(forKey: "selectedHerdrSession"),
     dictationCredentials: DictationCredentials? = KeychainStore.loadDictation(),
-    cloudDictationEnabled: Bool = UserDefaults.standard.bool(forKey: "cloudDictationEnabled")
+    savedDictationEngine: String? = UserDefaults.standard.string(forKey: "dictationEngine"),
+    legacyCloudDictationEnabled: Bool = UserDefaults.standard.bool(
+      forKey: "cloudDictationEnabled"),
+    openRouterDictationConsentGranted: Bool = UserDefaults.standard.bool(
+      forKey: "openRouterDictationConsentGranted"),
+    sonioxDictationConsentGranted: Bool = UserDefaults.standard.bool(
+      forKey: "sonioxDictationConsentGranted"),
+    cloudCleanupEnabled: Bool? = UserDefaults.standard.object(
+      forKey: "cloudCleanupEnabled") as? Bool
   ) {
     self.configuredHost = configuredHost
     self.configuredCredential = configuredCredential
     self.selectedSessionName = selectedSessionName
     self.dictationCredentials = dictationCredentials
-    self.cloudDictationEnabled =
-      cloudDictationEnabled && (dictationCredentials?.isComplete == true)
+    let resolvedEngine = resolveDictationEngine(
+      savedValue: savedDictationEngine,
+      legacyCloudEnabled: legacyCloudDictationEnabled,
+      credentials: dictationCredentials,
+      openRouterConsentGranted: openRouterDictationConsentGranted,
+      sonioxConsentGranted: sonioxDictationConsentGranted
+    )
+    self.dictationEngine = resolvedEngine
+    self.cloudCleanupEnabled = cloudCleanupEnabled ?? true
+    if savedDictationEngine != nil, savedDictationEngine != resolvedEngine.rawValue {
+      UserDefaults.standard.set(resolvedEngine.rawValue, forKey: "dictationEngine")
+    }
   }
 
   var hasConfiguration: Bool {
     !configuredHost.isEmpty && configuredCredential != nil
   }
 
-  var hasDictationCredentials: Bool {
-    dictationCredentials?.isComplete == true
-  }
+  var hasOpenRouterAPIKey: Bool { dictationCredentials?.hasOpenRouterKey == true }
+  var hasSonioxAPIKey: Bool { dictationCredentials?.hasSonioxKey == true }
+  var effectiveCloudCleanupEnabled: Bool { cloudCleanupEnabled && hasOpenRouterAPIKey }
 
   var dictationMode: DictationMode {
-    if cloudDictationEnabled, let dictationCredentials, dictationCredentials.isComplete {
-      return .cloud(dictationCredentials)
+    switch dictationEngine {
+    case .apple:
+      return .apple
+    case .openRouter:
+      guard let key = dictationCredentials?.openRouterAPIKey, !key.isEmpty else { return .apple }
+      return .openRouter(apiKey: key, cleanupEnabled: effectiveCloudCleanupEnabled)
+    case .soniox:
+      guard let key = dictationCredentials?.sonioxAPIKey, !key.isEmpty else { return .apple }
+      let cleanupKey =
+        effectiveCloudCleanupEnabled ? dictationCredentials?.openRouterAPIKey : nil
+      return .soniox(apiKey: key, cleanupAPIKey: cleanupKey)
     }
-    return .apple
   }
 
   var displayAgents: [BridgeAgent] {
@@ -386,10 +432,78 @@ final class AppModel {
     voiceDraft = nil
   }
 
+  func canUseDictationEngine(_ engine: DictationEngine) -> Bool {
+    switch engine {
+    case .apple: true
+    case .openRouter: hasOpenRouterAPIKey
+    case .soniox: hasSonioxAPIKey
+    }
+  }
+
+  func hasDictationConsent(for engine: DictationEngine) -> Bool {
+    engine == .apple
+      || UserDefaults.standard.bool(forKey: "\(engine.rawValue)DictationConsentGranted")
+  }
+
   @discardableResult
-  func saveDictationCredentials(openRouterAPIKey: String) -> Bool {
-    let credentials = DictationCredentials(openRouterAPIKey: openRouterAPIKey)
-    guard credentials.isComplete else { return false }
+  func saveOpenRouterAPIKey(_ apiKey: String) -> Bool {
+    let updated = DictationCredentials(
+      openRouterAPIKey: apiKey,
+      sonioxAPIKey: dictationCredentials?.sonioxAPIKey ?? ""
+    )
+    guard updated.hasOpenRouterKey else { return false }
+    return saveDictationCredentials(updated)
+  }
+
+  @discardableResult
+  func saveSonioxAPIKey(_ apiKey: String) -> Bool {
+    let updated = DictationCredentials(
+      openRouterAPIKey: dictationCredentials?.openRouterAPIKey ?? "",
+      sonioxAPIKey: apiKey
+    )
+    guard updated.hasSonioxKey else { return false }
+    return saveDictationCredentials(updated)
+  }
+
+  func setDictationEngine(_ engine: DictationEngine, grantingConsent: Bool = false) async {
+    guard canUseDictationEngine(engine) else { return }
+    if grantingConsent, engine != .apple {
+      UserDefaults.standard.set(
+        true, forKey: "\(engine.rawValue)DictationConsentGranted")
+    }
+    guard hasDictationConsent(for: engine) else { return }
+    await cancelVoice()
+    dictationEngine = engine
+    UserDefaults.standard.set(engine.rawValue, forKey: "dictationEngine")
+    voiceState = .notPrepared
+    partialTranscript = ""
+    if canSend { await prepareVoice() }
+  }
+
+  func setCloudCleanupEnabled(_ enabled: Bool) async {
+    guard hasOpenRouterAPIKey else { return }
+    await cancelVoice()
+    cloudCleanupEnabled = enabled
+    UserDefaults.standard.set(enabled, forKey: "cloudCleanupEnabled")
+    voiceState = .notPrepared
+    partialTranscript = ""
+    if canSend { await prepareVoice() }
+  }
+
+  func removeOpenRouterAPIKey() async {
+    if dictationEngine == .openRouter { await setDictationEngine(.apple) }
+    let updated = DictationCredentials(sonioxAPIKey: dictationCredentials?.sonioxAPIKey ?? "")
+    saveOrDeleteDictationCredentials(updated)
+  }
+
+  func removeSonioxAPIKey() async {
+    if dictationEngine == .soniox { await setDictationEngine(.apple) }
+    let updated = DictationCredentials(
+      openRouterAPIKey: dictationCredentials?.openRouterAPIKey ?? "")
+    saveOrDeleteDictationCredentials(updated)
+  }
+
+  private func saveDictationCredentials(_ credentials: DictationCredentials) -> Bool {
     do {
       try KeychainStore.saveDictation(credentials)
       dictationCredentials = credentials
@@ -401,20 +515,15 @@ final class AppModel {
     }
   }
 
-  func setCloudDictationEnabled(_ enabled: Bool) async {
-    guard !enabled || hasDictationCredentials else { return }
-    await cancelVoice()
-    cloudDictationEnabled = enabled
-    UserDefaults.standard.set(enabled, forKey: "cloudDictationEnabled")
-    voiceState = .notPrepared
-    partialTranscript = ""
-  }
-
-  func removeDictationCredentials() async {
-    await setCloudDictationEnabled(false)
+  private func saveOrDeleteDictationCredentials(_ credentials: DictationCredentials) {
     do {
-      try KeychainStore.deleteDictation()
-      dictationCredentials = nil
+      if credentials.isEmpty {
+        try KeychainStore.deleteDictation()
+        dictationCredentials = nil
+      } else {
+        try KeychainStore.saveDictation(credentials)
+        dictationCredentials = credentials
+      }
       errorMessage = nil
     } catch {
       report(error)
@@ -455,6 +564,7 @@ final class AppModel {
     }
 
     partialTranscript = ""
+    voiceLevel = 0
     voiceState = .preparing
     let generation = voiceSessionGeneration
     let mode = dictationMode
@@ -491,6 +601,7 @@ final class AppModel {
     let generation = voiceSessionGeneration
     let mode = dictationMode
     partialTranscript = ""
+    voiceLevel = 0
     voiceTarget = (selectedAgent.id, selectedAgent.name, selectedSessionName)
     voiceState = .starting
     voiceStartTask = Task { [weak self] in
@@ -502,6 +613,12 @@ final class AppModel {
           onPartial: { [weak self] partial in
             guard let self, generation == self.voiceSessionGeneration else { return }
             self.partialTranscript = partial
+          },
+          onLevel: { [weak self] level in
+            guard let self, generation == self.voiceSessionGeneration,
+              self.voiceState == .starting || self.voiceState == .listening
+            else { return }
+            self.voiceLevel = level
           },
           onFailure: { [weak self] error in
             guard let self, generation == self.voiceSessionGeneration else { return }
@@ -555,6 +672,7 @@ final class AppModel {
     voiceDurationTask = nil
     voiceEndInProgress = true
     let generation = voiceSessionGeneration
+    voiceLevel = 0
     voiceState = .finalizing
     defer {
       if generation == voiceSessionGeneration {
@@ -618,6 +736,7 @@ final class AppModel {
       guard generation == voiceSessionGeneration else { return }
       voiceState = .notPrepared
       partialTranscript = ""
+      voiceLevel = 0
       voiceTarget = nil
       if canSend {
         await prepareVoice()
@@ -653,6 +772,7 @@ final class AppModel {
     defer { voiceCancelInProgress = false }
     voiceSessionGeneration &+= 1
     voiceEndInProgress = false
+    voiceLevel = 0
     voiceState = .finalizing
     voiceDurationTask?.cancel()
     voiceDurationTask = nil
@@ -793,6 +913,7 @@ final class AppModel {
   private func handleVoiceFailure(_ error: any Error) async {
     let failedState = VoiceState.failed(error.localizedDescription)
     partialTranscript = await dictation.lastPartial
+    voiceLevel = 0
     if voiceState != failedState { errorFeedback += 1 }
     voiceState = failedState
     voiceTarget = nil

@@ -5,6 +5,15 @@ import Testing
 
 @testable import AgentSlate
 
+@Test
+func audioLevelsClampAndNormalize() {
+  #expect(normalizedAudioLevel(decibels: -.infinity) == 0)
+  #expect(normalizedAudioLevel(decibels: -60) == 0)
+  #expect(normalizedAudioLevel(decibels: -25) == 0.5)
+  #expect(normalizedAudioLevel(decibels: 0) == 1)
+  #expect(normalizedAudioLevel(decibels: 6) == 1)
+}
+
 @MainActor
 @Test
 func agentOrderingAndKeypadAvailability() {
@@ -209,11 +218,120 @@ func voiceDraftOnlyMatchesItsOriginalSelectedTarget() {
 }
 
 @Test
-func dictationCredentialsTrimAndRequireOpenRouterKey() {
-  let credentials = DictationCredentials(openRouterAPIKey: "\nsk-or-test\n")
+func dictationCredentialsTrimAndDecodeLegacyOpenRouterKey() throws {
+  let credentials = DictationCredentials(
+    openRouterAPIKey: "\nsk-or-test\n", sonioxAPIKey: " sx-test ")
   #expect(credentials.openRouterAPIKey == "sk-or-test")
-  #expect(credentials.isComplete)
-  #expect(!DictationCredentials(openRouterAPIKey: "").isComplete)
+  #expect(credentials.sonioxAPIKey == "sx-test")
+  #expect(credentials.hasOpenRouterKey)
+  #expect(credentials.hasSonioxKey)
+
+  let legacy = try JSONDecoder().decode(
+    DictationCredentials.self,
+    from: Data(#"{"openRouterAPIKey":"sk-or-legacy"}"#.utf8)
+  )
+  #expect(legacy.openRouterAPIKey == "sk-or-legacy")
+  #expect(!legacy.hasSonioxKey)
+  #expect(DictationCredentials().isEmpty)
+}
+
+@Test
+func dictationEngineMigratesAndRequiresItsOwnKey() {
+  let openRouter = DictationCredentials(openRouterAPIKey: "or")
+  let soniox = DictationCredentials(sonioxAPIKey: "sx")
+
+  #expect(
+    resolveDictationEngine(
+      savedValue: nil,
+      legacyCloudEnabled: true,
+      credentials: openRouter,
+      openRouterConsentGranted: false,
+      sonioxConsentGranted: false
+    ) == .openRouter)
+  #expect(
+    resolveDictationEngine(
+      savedValue: DictationEngine.soniox.rawValue,
+      legacyCloudEnabled: false,
+      credentials: soniox,
+      openRouterConsentGranted: false,
+      sonioxConsentGranted: true
+    ) == .soniox)
+  #expect(
+    resolveDictationEngine(
+      savedValue: DictationEngine.soniox.rawValue,
+      legacyCloudEnabled: false,
+      credentials: openRouter,
+      openRouterConsentGranted: false,
+      sonioxConsentGranted: true
+    ) == .apple)
+  #expect(
+    resolveDictationEngine(
+      savedValue: DictationEngine.soniox.rawValue,
+      legacyCloudEnabled: false,
+      credentials: soniox,
+      openRouterConsentGranted: false,
+      sonioxConsentGranted: false
+    ) == .apple)
+}
+
+@MainActor
+@Test
+func cleanupAppliesOnlyToKeyedCloudModes() {
+  let keys = DictationCredentials(openRouterAPIKey: "or", sonioxAPIKey: "sx")
+  let soniox = AppModel(
+    configuredHost: "",
+    configuredCredential: nil,
+    dictationCredentials: keys,
+    savedDictationEngine: DictationEngine.soniox.rawValue,
+    sonioxDictationConsentGranted: true,
+    cloudCleanupEnabled: true
+  )
+  #expect(soniox.dictationMode == .soniox(apiKey: "sx", cleanupAPIKey: "or"))
+
+  let sonioxOnly = AppModel(
+    configuredHost: "",
+    configuredCredential: nil,
+    dictationCredentials: DictationCredentials(sonioxAPIKey: "sx"),
+    savedDictationEngine: DictationEngine.soniox.rawValue,
+    sonioxDictationConsentGranted: true,
+    cloudCleanupEnabled: true
+  )
+  #expect(sonioxOnly.dictationMode == .soniox(apiKey: "sx", cleanupAPIKey: nil))
+
+  let apple = AppModel(
+    configuredHost: "",
+    configuredCredential: nil,
+    dictationCredentials: keys,
+    savedDictationEngine: DictationEngine.apple.rawValue,
+    cloudCleanupEnabled: true
+  )
+  #expect(apple.dictationMode == .apple)
+}
+
+@Test
+func sonioxConfigurationAndTranscriptAssembly() throws {
+  let data = try makeSonioxConfiguration(apiKey: " sx-secret ")
+  let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+  #expect(json["api_key"] as? String == "sx-secret")
+  #expect(json["model"] as? String == "stt-rt-v5")
+  #expect(json["audio_format"] as? String == "pcm_s16le")
+  #expect(json["sample_rate"] as? Int == 16_000)
+  #expect(json["num_channels"] as? Int == 1)
+  #expect(json["enable_endpoint_detection"] as? Bool == true)
+
+  var transcript = SonioxTranscriptAssembler()
+  transcript.apply([SonioxToken(text: "hel", isFinal: false)])
+  #expect(transcript.currentText == "hel")
+  transcript.apply([
+    SonioxToken(text: "Hello ", isFinal: true),
+    SonioxToken(text: "wor", isFinal: false),
+  ])
+  #expect(transcript.currentText == "Hello wor")
+  transcript.apply([
+    SonioxToken(text: "world", isFinal: true),
+    SonioxToken(text: "<end>", isFinal: true),
+  ])
+  #expect(transcript.currentText == "Hello world")
 }
 
 @Test

@@ -69,6 +69,7 @@ struct ContentView: View {
           TalkingPresentation(
             state: model.voiceState,
             transcript: model.partialTranscript,
+            level: model.voiceLevel,
             action: armedVoiceAction,
             targets: targets,
             contentWidth: width,
@@ -612,7 +613,7 @@ private struct VoiceKey: View {
   let cancelVoice: () -> Void
   let armVoice: (VoiceReleaseAction) -> Void
 
-  @GestureState private var isPressed = false
+  @State private var isPressed = false
   @State private var isHolding = false
 
   var body: some View {
@@ -628,28 +629,31 @@ private struct VoiceKey: View {
       }
       .contentShape(RoundedRectangle(cornerRadius: 21, style: .continuous))
       .gesture(
-        DragGesture(
-          minimumDistance: 0,
-          coordinateSpace: .named(VoiceTargetLayout.coordinateSpace)
-        )
-          .updating($isPressed) { _, pressed, _ in
-            pressed = true
-          }
-          .onChanged { value in
-            if !isHolding {
-              guard enabled else { return }
-              isHolding = true
-              beginVoice()
-            }
+        ImmediateLongPressGesture(
+          began: { location in
+            guard enabled else { return }
+            isPressed = true
+            isHolding = true
+            beginVoice()
             armVoice(
               .classify(
-                value.location,
+                location,
                 cancelTarget: cancelTarget,
                 editTarget: editTarget
               ))
-          }
-          .onEnded { value in
+          },
+          changed: { location in
             guard isHolding else { return }
+            armVoice(
+              .classify(
+                location,
+                cancelTarget: cancelTarget,
+                editTarget: editTarget
+              ))
+          },
+          ended: { location in
+            guard isHolding else { return }
+            isPressed = false
             isHolding = false
             guard enabled else {
               cancelVoice()
@@ -657,18 +661,19 @@ private struct VoiceKey: View {
             }
             releaseVoice(
               .classify(
-                value.location,
+                location,
                 cancelTarget: cancelTarget,
                 editTarget: editTarget
               ))
+          },
+          cancelled: {
+            isPressed = false
+            guard isHolding else { return }
+            isHolding = false
+            cancelVoice()
           }
+        )
       )
-      .onChange(of: isPressed) { wasPressed, isPressed in
-        if !isPressed, wasPressed, isHolding {
-          isHolding = false
-          cancelVoice()
-        }
-      }
       .disabled(!enabled && !isListening)
       .accessibilityLabel("Voice")
       .accessibilityHint(
@@ -691,6 +696,42 @@ private struct VoiceKey: View {
           Button("Cancel dictation", action: cancelVoice)
         }
       }
+  }
+}
+
+private struct ImmediateLongPressGesture: UIGestureRecognizerRepresentable {
+  let began: (CGPoint) -> Void
+  let changed: (CGPoint) -> Void
+  let ended: (CGPoint) -> Void
+  let cancelled: () -> Void
+
+  func makeUIGestureRecognizer(context: Context) -> UILongPressGestureRecognizer {
+    let recognizer = UILongPressGestureRecognizer()
+    recognizer.minimumPressDuration = 0
+    recognizer.allowableMovement = .greatestFiniteMagnitude
+    return recognizer
+  }
+
+  func handleUIGestureRecognizerAction(
+    _ recognizer: UILongPressGestureRecognizer,
+    context: Context
+  ) {
+    let location = context.converter.location(
+      in: .named(VoiceTargetLayout.coordinateSpace))
+    switch recognizer.state {
+    case .began:
+      began(location)
+    case .changed:
+      changed(location)
+    case .ended:
+      ended(location)
+    case .cancelled, .failed:
+      cancelled()
+    case .possible:
+      break
+    @unknown default:
+      cancelled()
+    }
   }
 }
 
@@ -728,6 +769,7 @@ enum VoiceTargetLayout {
 private struct TalkingPresentation: View {
   let state: VoiceState
   let transcript: String
+  let level: Double
   let action: VoiceReleaseAction
   let targets: VoiceTargetFrames
   let contentWidth: CGFloat
@@ -749,9 +791,11 @@ private struct TalkingPresentation: View {
           .frame(width: targets.edit.width, height: targets.edit.height)
           .position(x: targets.edit.midX, y: targets.edit.midY)
 
-        VoiceTranscript(
-          text: displayedTranscript
-        )
+        VStack(spacing: 12) {
+          VoiceTranscript(text: displayedTranscript)
+            .frame(maxHeight: .infinity)
+          MicrophoneLevelMeter(level: level)
+        }
         .frame(width: contentWidth, height: transcriptHeight)
         .position(
           x: geometry.size.width / 2,
@@ -764,6 +808,26 @@ private struct TalkingPresentation: View {
   private var displayedTranscript: String {
     if state == .starting { return "Starting microphone…" }
     return transcript.isEmpty ? "Listening…" : transcript
+  }
+}
+
+private struct MicrophoneLevelMeter: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  let level: Double
+  private let weights = [0.45, 0.65, 0.85, 1.0, 0.75, 0.75, 1.0, 0.85, 0.65, 0.45]
+
+  var body: some View {
+    HStack(alignment: .center, spacing: 4) {
+      ForEach(weights.indices, id: \.self) { index in
+        Capsule()
+          .fill(.white.opacity(0.92))
+          .frame(width: 4, height: 4 + 28 * level * weights[index])
+      }
+    }
+    .frame(height: 32)
+    .animation(reduceMotion ? nil : .linear(duration: 0.08), value: level)
+    .accessibilityHidden(true)
   }
 }
 
@@ -1294,6 +1358,8 @@ private struct SettingsView: View {
   @State private var host: String
   @State private var code = ""
   @State private var openRouterAPIKey = ""
+  @State private var sonioxAPIKey = ""
+  @State private var pendingDictationEngine: DictationEngine?
   @State private var showingCloudConsent = false
   @State private var showingForgetConfirmation = false
   @State private var notice: SettingsNotice?
@@ -1363,12 +1429,31 @@ private struct SettingsView: View {
         }
 
         Section {
-          LabeledContent(
-            "Current Engine",
-            value: model.cloudDictationEnabled ? "Cloud with Apple fallback" : "Apple on-device"
-          )
+          LabeledContent("Current Engine") {
+            Menu(model.dictationEngine.label) {
+              Button(DictationEngine.apple.label) { selectDictationEngine(.apple) }
+                .disabled(!model.canUseDictationEngine(.apple))
+              Button(DictationEngine.openRouter.label) { selectDictationEngine(.openRouter) }
+                .disabled(!model.canUseDictationEngine(.openRouter))
+              Button(DictationEngine.soniox.label) { selectDictationEngine(.soniox) }
+                .disabled(!model.canUseDictationEngine(.soniox))
+            }
+          }
 
-          if model.hasDictationCredentials {
+          Toggle(
+            "Clean up transcripts",
+            isOn: Binding(
+              get: {
+                model.dictationEngine != .apple && model.effectiveCloudCleanupEnabled
+              },
+              set: { enabled in
+                Task { await model.setCloudCleanupEnabled(enabled) }
+              }
+            )
+          )
+          .disabled(model.dictationEngine == .apple || !model.hasOpenRouterAPIKey)
+
+          if model.hasOpenRouterAPIKey {
             LabeledContent("OpenRouter API Key", value: "Saved")
           }
 
@@ -1377,48 +1462,58 @@ private struct SettingsView: View {
             .autocorrectionDisabled()
             .textContentType(.password)
 
-          Button(model.hasDictationCredentials ? "Replace API Key" : "Save API Key") {
-            if model.saveDictationCredentials(openRouterAPIKey: openRouterAPIKey) {
+          Button(model.hasOpenRouterAPIKey ? "Replace OpenRouter Key" : "Save OpenRouter Key") {
+            if model.saveOpenRouterAPIKey(openRouterAPIKey) {
               openRouterAPIKey = ""
             }
           }
           .disabled(openRouterAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
-          if model.hasDictationCredentials {
-            Toggle(
-              "Use Cloud Dictation",
-              isOn: Binding(
-                get: { model.cloudDictationEnabled },
-                set: { enabled in
-                  if enabled {
-                    showingCloudConsent = true
-                  } else {
-                    Task { await model.setCloudDictationEnabled(false) }
-                  }
-                }
-              )
-            )
-            .alert("Enable Cloud Dictation?", isPresented: $showingCloudConsent) {
-              Button("Cancel", role: .cancel) {}
-              Button("Enable") {
-                Task { await model.setCloudDictationEnabled(true) }
-              }
-            } message: {
-              Text(
-                "Your microphone audio will be sent through OpenRouter to Groq's Whisper model for transcription. The transcript will then be sent through OpenRouter to Google for cleanup. Both requests require Zero Data Retention routing."
-              )
+          if model.hasOpenRouterAPIKey {
+            Button("Remove OpenRouter Key", role: .destructive) {
+              Task { await model.removeOpenRouterAPIKey() }
             }
+          }
 
-            Button("Remove API Key", role: .destructive) {
-              Task { await model.removeDictationCredentials() }
+          if model.hasSonioxAPIKey {
+            LabeledContent("Soniox API Key", value: "Saved")
+          }
+
+          SecureField("Soniox API key", text: $sonioxAPIKey)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .textContentType(.password)
+
+          Button(model.hasSonioxAPIKey ? "Replace Soniox Key" : "Save Soniox Key") {
+            if model.saveSonioxAPIKey(sonioxAPIKey) {
+              sonioxAPIKey = ""
+            }
+          }
+          .disabled(sonioxAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+          if model.hasSonioxAPIKey {
+            Button("Remove Soniox Key", role: .destructive) {
+              Task { await model.removeSonioxAPIKey() }
             }
           }
         } header: {
           Text("Dictation")
         } footer: {
           Text(
-            "Cloud dictation uses your OpenRouter account and requires Zero Data Retention routing. Apple on-device dictation remains available when cloud dictation is off or unavailable."
+            "Apple stays on-device. OpenRouter uses Whisper after recording. Soniox v5 shows live cloud transcription. Cloud failures fall back to Apple; cleanup uses your OpenRouter key."
           )
+        }
+        .alert(consentTitle, isPresented: $showingCloudConsent) {
+          Button("Cancel", role: .cancel) {
+            pendingDictationEngine = nil
+          }
+          Button("Enable") {
+            guard let engine = pendingDictationEngine else { return }
+            pendingDictationEngine = nil
+            Task { await model.setDictationEngine(engine, grantingConsent: true) }
+          }
+        } message: {
+          Text(consentMessage)
         }
 
         Section("Offline Preview") {
@@ -1528,11 +1623,49 @@ private struct SettingsView: View {
     }
   }
 
+  private func selectDictationEngine(_ engine: DictationEngine) {
+    guard model.canUseDictationEngine(engine), engine != model.dictationEngine else { return }
+    if model.hasDictationConsent(for: engine) {
+      Task { await model.setDictationEngine(engine) }
+    } else {
+      pendingDictationEngine = engine
+      showingCloudConsent = true
+    }
+  }
+
+  private var consentTitle: String {
+    "Enable \(pendingDictationEngine?.label ?? "Cloud Dictation")?"
+  }
+
+  private var consentMessage: String {
+    switch pendingDictationEngine {
+    case .openRouter:
+      "Microphone audio will be sent through OpenRouter to Groq-hosted Whisper. "
+        + "When cleanup is enabled, the transcript is sent through OpenRouter to Google. "
+        + "Both requests require Zero Data Retention routing."
+    case .soniox:
+      "Live microphone audio will be sent directly to Soniox. When cleanup is enabled, "
+        + "the transcript is also sent through OpenRouter to Google."
+    case .apple, nil:
+      "Apple dictation stays on this iPhone."
+    }
+  }
+
   private var appVersion: String {
     let info = Bundle.main.infoDictionary
     let version = info?["CFBundleShortVersionString"] as? String ?? "0.1.0"
     let build = info?["CFBundleVersion"] as? String ?? "3"
     return "\(version) (\(build))"
+  }
+}
+
+extension DictationEngine {
+  fileprivate var label: String {
+    switch self {
+    case .apple: "Apple On-Device"
+    case .openRouter: "OpenRouter Whisper"
+    case .soniox: "Soniox v5 Real-Time"
+    }
   }
 }
 

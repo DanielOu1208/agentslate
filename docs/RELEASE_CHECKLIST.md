@@ -2,7 +2,7 @@
 
 The project owner has authorized preparation and publication of the open-source repository, Homebrew release, and external TestFlight beta. Production App Store submission and release remain explicitly out of scope.
 
-The optional cloud-dictation work added on July 18, 2026 is local-device testing work only. Do not upload or submit a build containing it until the owner gives separate approval after physical-iPhone acceptance.
+The optional cloud-dictation work added beginning July 18, 2026, including Soniox real-time transcription, is local-device testing work only. Do not upload or submit a build containing it until the owner gives separate approval after physical-iPhone acceptance.
 
 ## Release identity
 
@@ -52,7 +52,7 @@ The owner chose to proceed with AgentSlate after reviewing the same-category nam
 
 - Beta app description:
 
-  > AgentSlate is an iPhone remote control for coding agents running in Herdr on your Mac. Pair over Tailscale, select a visible agent, and send common keys, short text, or voice dictation. Apple on-device dictation is the default; optional cloud dictation uses an OpenRouter key supplied by the tester. This beta includes an offline Demo Mode.
+  > AgentSlate is an iPhone remote control for coding agents running in Herdr on your Mac. Pair over Tailscale, select a visible agent, and send common keys, short text, or voice dictation. Apple on-device dictation is the default; optional cloud engines use OpenRouter or Soniox keys supplied by the tester. This beta includes an offline Demo Mode.
 
 - Feedback email: temporarily use the email attached to the Apple developer account.
 - Privacy policy URL: `https://danielou1208.github.io/agentslate/privacy/`
@@ -64,11 +64,11 @@ The owner chose to proceed with AgentSlate after reviewing the same-category nam
 - Sign-in required: No.
 - Review notes:
 
-  > AgentSlate normally connects to a Mac running Herdr over Tailscale. No AgentSlate account is required. For review without a Mac, open Demo Mode from onboarding; Demo Mode uses fixed sample agents and never makes a bridge connection. To test a real bridge, install the linked Homebrew formula on a Mac with Herdr and Tailscale, run `brew services start agentslate`, then run `agentslate pair` and enter the Mac's Tailscale address and six-digit code in the app. Microphone permission supports Apple on-device dictation by default. Optional Cloud Dictation must be explicitly enabled and requires one tester-supplied OpenRouter API key.
+  > AgentSlate normally connects to a Mac running Herdr over Tailscale. No AgentSlate account is required. For review without a Mac, open Demo Mode from onboarding; Demo Mode uses fixed sample agents and never makes a bridge connection. To test a real bridge, install the linked Homebrew formula on a Mac with Herdr and Tailscale, run `brew services start agentslate`, then run `agentslate pair` and enter the Mac's Tailscale address and six-digit code in the app. Microphone permission supports Apple on-device dictation by default. Optional OpenRouter Whisper and Soniox v5 Real-Time engines require tester-supplied API keys and explicit consent.
 
 - What to test:
 
-  > Please test onboarding and Demo Mode, session and agent selection, control labels and VoiceOver, reconnect behavior, Apple and optional cloud dictation, automatic fallback, Forget Bridge, watched-screen Accept/Deny gating for blocked agents, and that Accept/Deny stay visually available but do nothing when no supported blocked prompt is selected.
+  > Please test onboarding and Demo Mode, session and agent selection, control labels and VoiceOver, reconnect behavior, Apple/OpenRouter/Soniox dictation, live Soniox text, cleanup on and off, automatic Apple fallback, Forget Bridge, watched-screen Accept/Deny gating for blocked agents, and that Accept/Deny stay visually available but do nothing when no supported blocked prompt is selected.
 
 ### TestFlight steps
 
@@ -94,7 +94,7 @@ Build `0.1.0 (4)` entered `Waiting for Review` on July 16, 2026. The public link
 >
 > See live Herdr sessions and agents, focus the agent you are watching, and send common navigation keys or short instructions without reaching for the desktop keyboard. Hold Voice to dictate with Apple's on-device speech framework by default, or opt into a user-funded cloud pipeline, then send, cancel, or review the text.
 >
-> AgentSlate connects directly over your private Tailscale network. It has no AgentSlate account, developer-operated cloud backend, analytics, advertising, or tracking. Optional cloud dictation connects to OpenRouter using an API key supplied by the user; OpenRouter routes transcription to Groq and cleanup to Google. Each iPhone pairs with a short-lived code and receives its own revocable credential.
+> AgentSlate connects directly over your private Tailscale network. It has no AgentSlate account, developer-operated cloud backend, analytics, advertising, or tracking. Optional cloud dictation connects to OpenRouter for Whisper transcription or Soniox for real-time transcription using API keys supplied by the user. Optional cleanup routes transcript text through OpenRouter to Google. Each iPhone pairs with a short-lived code and receives its own revocable credential.
 >
 > A Mac running Herdr, Tailscale, and the free open-source AgentSlate bridge is required for live use. Offline Demo Mode is included.
 >
@@ -104,7 +104,7 @@ Build `0.1.0 (4)` entered `Waiting for Review` on July 16, 2026. The public link
 - Support URL: `https://danielou1208.github.io/agentslate/support/`
 - Marketing URL: `https://danielou1208.github.io/agentslate/`
 - Privacy policy URL: `https://danielou1208.github.io/agentslate/privacy/`
-- App privacy: Reassess before the next upload; optional cloud dictation may require Audio Data and User Content disclosures even though processing uses user-supplied accounts.
+- App privacy: Reassess against the providers' then-current retention terms before the next upload. The current privacy manifest keeps collected data empty because zero-retention/transient request processing is not retained beyond servicing the request.
 - Tracking: No
 - Encryption declaration: `ITSAppUsesNonExemptEncryption=NO`
 - EU Digital Services Act: Non-trader

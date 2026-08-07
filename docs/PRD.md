@@ -81,6 +81,7 @@ The open beta additionally includes editable spoken instructions, hold-to-talk s
 ### Input
 
 - Keep arrows, Enter, Escape, Tab, and Shift+Tab on the primary phone control bank for every current agent.
+- Make remote Shift+Tab produce the same terminal input as a physical Shift+Tab in Codex enhanced-keyboard mode without changing the normal Herdr key route for other agents.
 - Continue supporting Space in protocol v3 even though the phone layout does not expose a dedicated key for it.
 - Support printable Unicode text with and without a final Enter.
 - Include the selected session name and agent ID in every input request.
@@ -93,21 +94,23 @@ The open beta additionally includes editable spoken instructions, hold-to-talk s
 ### Voice and speech
 
 - Default to Apple's on-device SpeechAnalyzer and DictationTranscriber (iOS 26+) for hold-to-talk dictation.
-- Let users explicitly opt into cloud dictation by saving one OpenRouter API key in the iOS Keychain; never bundle a developer-funded credential.
-- In cloud mode, record a temporary WAV file, transcribe it through OpenRouter with `openai/whisper-large-v3-turbo` (currently served by Groq), and clean only the returned transcript with `google/gemini-3.1-flash-lite`.
-- If OpenRouter transcription fails, retry the same recording with Apple's on-device speech framework. If cleanup fails or returns invalid text, keep the raw transcript.
+- Let users choose Apple On-Device, OpenRouter Whisper, or Soniox v5 Real-Time and store each user-supplied provider key in the iOS Keychain; never bundle a developer-funded credential.
+- In OpenRouter mode, record a temporary WAV file and transcribe it with `openai/whisper-large-v3-turbo` (currently served by Groq). In Soniox mode, stream 16 kHz mono PCM to `stt-rt-v5` and show its provisional and final text in the existing talking presentation.
+- Offer cleanup for either cloud engine, on by default, using `google/gemini-3.1-flash-lite`; keep explicitly selected Apple dictation fully on-device. If cloud transcription fails, retry the local recording with Apple's speech framework. If cleanup fails, is disabled, or lacks an OpenRouter key, keep the raw transcript.
 - Treat the transcript as untrusted data during cleanup, allow rephrasing for clarity, and instruct the cleanup model to rewrite rather than answer questions, follow instructions, solve tasks, or add facts.
-- Do not show partial cloud text. Show clear listening, transcribing, and cleaning states, and cap cloud recording at two minutes before opening the review editor.
+- Show Soniox provisional text live, keep OpenRouter batch-only, show clear listening/finalizing/transcribing/fallback/cleaning states, and cap both cloud engines at two minutes before opening the review editor.
 - Default to hold, speak, and release to send text plus Enter through the existing bridge `send_text` path.
 - While holding, show only two visible alternate release targets: upper-left Cancel discards and upper-right Edit finalizes into an in-memory review sheet. Leaving either target restores Send.
 - Keep the microphone sharp and interactive while the blocked keypad is blurred and dimmed; show live, auto-scrolling transcript text in Apple mode, a listening state in cloud mode, and an outcome-colored border that respects Reduce Motion.
 - Let the review sheet edit multi-line text, convert line breaks to spaces, reject blank/control-character/over-8,192-byte input, and retain failed or disconnected drafts for retry.
 - Bind an Edit draft to the agent and session captured when recording began; send only while that exact target remains selected and available.
 - Prepare speech after saved bridge setup is available so the first press does not perform model setup.
+- Enter the talking presentation on microphone touch-down; do not wait for SwiftUI's drag gesture delivery or audio-session startup.
+- Show a lightweight ten-bar microphone-level meter during capture by reusing the active Apple or cloud audio path; do not start a second recorder or retain level samples.
 - Request microphone access with the native asynchronous audio API; do not request the legacy speech-recognition permission.
 - Cancel capture when the gesture is interrupted or the app leaves the foreground, and never send partial text after a recognition or finalization failure.
 - With VoiceOver, use one activation to start, a second to send, and named Edit dictation and Cancel dictation actions while keeping the same talking presentation.
-- Never stream microphone audio through the Herdr bridge. Keep audio on the phone in Apple mode; in opted-in cloud mode, send the temporary recording to OpenRouter for Groq-hosted transcription and delete the local file after processing.
+- Never stream microphone audio through the Herdr bridge. Keep audio on the phone in Apple mode; send opted-in cloud audio only to the selected provider and delete temporary fallback audio after processing or cancellation.
 - Keep text-to-speech out of the initial keypad release because the external screen remains the source of context.
 
 ### Connection and security
@@ -158,6 +161,6 @@ The open beta additionally includes editable spoken instructions, hold-to-talk s
 - The shared Swift package targets iOS 18 and newer.
 - The iPhone app targets iOS 26 and newer so it can use SpeechAnalyzer for on-device dictation.
 - Dedicated Accept and Deny keys are watched-screen default-keymap conveniences for five supported agent kinds; they are not structured authorization and remain disabled unless the selected agent is blocked.
-- The Voice key uses Apple on-device hold-to-talk dictation by default, with an optional user-funded OpenRouter pipeline, automatic Apple/raw-text fallbacks, and the same Send, Cancel, and editable review outcomes. Finalized sends reuse the existing bridge text route.
+- The Voice key uses Apple on-device hold-to-talk dictation by default, with optional user-funded OpenRouter Whisper and Soniox v5 real-time pipelines, automatic Apple/raw-text fallbacks, optional cloud cleanup, and the same Send, Cancel, and editable review outcomes. Finalized sends reuse the existing bridge text route.
 - Demo Mode is an offline review path with fixed sample data, not a simulated connection to the real bridge.
 - Version 0.1.0 stops at external TestFlight. Production App Store metadata may be prepared, but production review and release require separate explicit approval.

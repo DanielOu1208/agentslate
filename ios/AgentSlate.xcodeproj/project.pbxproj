@@ -17,6 +17,7 @@
 		1B0000000000000000000008 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 1A0000000000000000000009 /* PrivacyInfo.xcprivacy */; };
 		1B0000000000000000000009 /* THIRD_PARTY_NOTICES.md in Resources */ = {isa = PBXBuildFile; fileRef = 1A000000000000000000000A /* THIRD_PARTY_NOTICES.md */; };
 		1B000000000000000000000A /* CloudDictationClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A000000000000000000000B /* CloudDictationClient.swift */; };
+		1B000000000000000000000B /* SonioxRealtimeClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A000000000000000000000C /* SonioxRealtimeClient.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -41,6 +42,7 @@
 		1A0000000000000000000009 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		1A000000000000000000000A /* THIRD_PARTY_NOTICES.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = ../THIRD_PARTY_NOTICES.md; sourceTree = SOURCE_ROOT; };
 		1A000000000000000000000B /* CloudDictationClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudDictationClient.swift; sourceTree = "<group>"; };
+		1A000000000000000000000C /* SonioxRealtimeClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SonioxRealtimeClient.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -79,6 +81,7 @@
 				1A0000000000000000000003 /* AppModel.swift */,
 				1A0000000000000000000008 /* VoiceDictationController.swift */,
 				1A000000000000000000000B /* CloudDictationClient.swift */,
+				1A000000000000000000000C /* SonioxRealtimeClient.swift */,
 				1A0000000000000000000007 /* Assets.xcassets */,
 				1A0000000000000000000009 /* PrivacyInfo.xcprivacy */,
 				1A000000000000000000000A /* THIRD_PARTY_NOTICES.md */,
@@ -215,6 +218,7 @@
 				1B0000000000000000000003 /* AppModel.swift in Sources */,
 				1B0000000000000000000007 /* VoiceDictationController.swift in Sources */,
 				1B000000000000000000000A /* CloudDictationClient.swift in Sources */,
+				1B000000000000000000000B /* SonioxRealtimeClient.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -279,7 +283,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = AgentSlate;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connects to your Herdr bridge over your private network.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Records spoken instructions for on-device dictation or, when you opt in, transcription through OpenRouter.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Records spoken instructions for on-device dictation or, when you opt in, transcription through OpenRouter or Soniox.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Provides private on-device dictation and fallback when cloud dictation is unavailable.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -313,7 +317,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = AgentSlate;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Connects to your Herdr bridge over your private network.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Records spoken instructions for on-device dictation or, when you opt in, transcription through OpenRouter.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Records spoken instructions for on-device dictation or, when you opt in, transcription through OpenRouter or Soniox.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Provides private on-device dictation and fallback when cloud dictation is unavailable.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

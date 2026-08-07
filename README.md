@@ -42,7 +42,7 @@ AgentSlate does not stream terminal output, provide a general shell API, use ana
 3. Tapping an agent focuses its existing Herdr pane.
 4. Key presses, approval shortcuts, and dictated text go only to the selected agent.
 
-Voice input uses Apple's on-device speech recognition unless you explicitly enable Cloud Dictation in Settings. Cloud Dictation sends a temporary audio recording to OpenRouter's Whisper Large V3 Turbo endpoint, currently served by Groq, then sends only that transcript through OpenRouter for cleanup. If cloud transcription fails, the app retries the recording with Apple's on-device speech framework; if cleanup fails, it uses the raw transcript.
+Voice input defaults to Apple's on-device speech recognition. Settings also offers user-funded OpenRouter Whisper and Soniox v5 Real-Time engines with separate API keys stored in Keychain. Soniox shows provisional text while you speak; both cloud engines can optionally pass the finished transcript through OpenRouter cleanup. If cloud transcription fails, the app retries the temporary recording with Apple's on-device speech framework; if cleanup fails or is disabled, it uses the raw transcript.
 
 ## Requirements
 
