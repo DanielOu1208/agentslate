@@ -15,7 +15,7 @@ A task is `Done` only when its acceptance evidence is recorded here. A phase is 
 | 3. Typed and voice interaction | In progress | Apple and optional cloud dictation pipelines are automated-test verified; full physical speech and fallback acceptance remain open |
 | 4. Pairing and lifecycle | In progress | Protocol v3 Mac and Swift foundations implemented; iPhone onboarding/Forget Bridge acceptance pending |
 | 5. Hardening | Not started | Starts after daily-use validation |
-| 6. Release staging | In progress | Draft PR and `v0.2.0` release-page preparation are authorized; merge, tag/release publication, Homebrew, and TestFlight remain separate approval gates |
+| 6. Release staging | In progress | Source, Homebrew, and external TestFlight beta publication are authorized; execution and public verification are in progress |
 
 ## Phase 0: Herdr API validation
 
@@ -148,7 +148,7 @@ Exit criterion: the app is reliable enough for repeated daily supervision.
 - [ ] Install the approved external TestFlight build on reviewers' phones.
 - [x] Keep production version `0.1.0` in Prepare for Submission; do not submit it to App Review.
 - [x] Prepare local marketing version `0.2.0`, build `5`, without changing App Store Connect or TestFlight.
-- [ ] Complete owner physical-iPhone acceptance before any 0.2 upload or publication.
+- [x] Record the owner's manual dictation smoke pass and explicit decision to continue the remaining physical matrix as beta validation after publication.
 
 Exit criterion: the external TestFlight build is approved and installed, public source/Homebrew artifacts are available, and the production App Store version remains an unsubmitted draft.
 
@@ -208,6 +208,7 @@ Exit criterion: the external TestFlight build is approved and installed, public 
 | 2026-08-07 | Prepare `0.2.0 (5)` and update only the owner's MacBook bridge | Local service replacement supports device testing without publishing a source tag, Homebrew formula, TestFlight build, or App Store Connect change |
 | 2026-08-08 | Send physical-key Shift+Tab through `pane.send_text`, with an OMP-specific enhanced encoding | Live testing proved terminal-standard BackTab (`Esc [ Z`) with Codex and showed that OMP requires enhanced Shift+Tab (`Esc [ 9 ; 2 u`) while keyboard enhancement is active. Codex and unrecognized agent kinds therefore use the portable standard sequence; OMP alone uses the enhanced sequence. |
 | 2026-08-08 | Prepare the OpenRouter recorder before applying complete file protection | `AVAudioRecorder.prepareToRecord()` creates the WAV file. Applying protection afterward, but still before microphone recording begins, avoids a missing-file storage failure without leaving recorded audio unprotected. |
+| 2026-08-08 | Publish 0.2.0 to source, Homebrew, and the existing external TestFlight beta | Automated checks and review passed, the owner reported the protected-recording dictation flow working, and explicitly accepted the remaining physical matrix as beta follow-up. Production App Store submission remains a separate approval gate. |
 
 ## Verification evidence
 

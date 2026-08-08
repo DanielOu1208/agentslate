@@ -1,34 +1,36 @@
 # AgentSlate Release Checklist
 
-## 0.2.0 local candidate
+## 0.2.0 release candidate
 
 - Marketing version: `0.2.0`
 - Build: `5`
 - Minimum Herdr: `0.8.0` (local protocol 19)
-- Status: draft PR and source-release preparation; publication pending
+- Status: source and external TestFlight beta publication authorized; execution in progress
 
-The 0.2 candidate includes Apple on-device dictation, optional OpenRouter-routed Whisper, and Soniox real-time transcription. The owner authorized pushing the candidate PR and documentation and creating a draft GitHub release page. Do not merge the PR, create or push a release tag, publish the draft release, update the Homebrew formula or tap, upload to TestFlight, or change App Store Connect without the corresponding explicit approval.
+The 0.2 candidate includes Apple on-device dictation, optional OpenRouter-routed Whisper, and Soniox real-time transcription. On August 8, 2026, after the protected-recording fix and manual dictation smoke test, the owner explicitly authorized merging the PR, publishing the source and Homebrew release, and updating the existing external TestFlight beta. Production App Store submission and release remain out of scope.
 
 - [x] Owner manually smoke-tested dictation after the protected Whisper recording fix and reported it working well.
 - [ ] Complete the remaining fallback, interruption, two-minute cutoff, haptic, and latency acceptance matrix.
 - [ ] Confirm live control against Herdr 0.8.0 on the owner's Mac and iPhone.
-- [ ] Receive explicit owner approval to merge the source PR.
+- [x] Record the owner's decision to treat the remaining physical matrix as post-release beta validation rather than a publication blocker.
+- [x] Receive explicit owner approval to merge the source PR.
 - [ ] After merge approval, merge the PR and wait for `main` CI before publishing a source release.
-- [ ] Receive explicit owner approval for the TestFlight upload.
+- [x] Receive explicit owner approval for the TestFlight upload.
 - [ ] After approval, upload `0.2.0 (5)` and update the existing external beta group.
-- [ ] After separate source-release approval, publish the draft `v0.2.0` release, calculate its archive checksum, and update the Homebrew formula and tap.
+- [x] Receive explicit owner approval for the source and Homebrew release.
+- [ ] Publish the draft `v0.2.0` release, calculate its archive checksum, and update the Homebrew formula and tap.
 
 ## 0.1.0 historical release
 
 The project owner has authorized preparation and publication of the open-source repository, Homebrew release, and external TestFlight beta. Production App Store submission and release remain explicitly out of scope.
 
-The optional cloud-dictation work added beginning July 18, 2026, including Soniox real-time transcription, is local-device testing work only. Do not upload or submit a build containing it until the owner gives separate approval after physical-iPhone acceptance.
+The earlier restriction on uploading the optional cloud-dictation work was superseded by the owner's August 8, 2026 approval for the 0.2 external TestFlight beta.
 
 ## Release identity
 
 - Product and App Store name: `AgentSlate`
 - Subtitle: `Remote control for Herdr`
-- Version: `0.1.0`
+- Version: `0.2.0`
 - Bundle ID: `com.danielou.HerdrRemoteKeypad` (retained internally to reuse the unpublished App Store Connect record)
 - Repository: `DanielOu1208/agentslate`
 - Homebrew tap: `DanielOu1208/homebrew-agentslate`

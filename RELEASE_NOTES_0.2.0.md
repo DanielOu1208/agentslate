@@ -2,7 +2,7 @@
 
 AgentSlate 0.2.0 expands voice input into a choice of private on-device dictation or user-funded cloud transcription, while improving terminal controls, compatibility, recovery, and security.
 
-> **Draft:** Automated and local-bridge validation passed, and the owner reported a successful physical dictation smoke test after the protected Whisper recording fix. The full physical fallback/provider matrix and locked-device file-protection check remain pending. Version 0.2.0 has not been tagged, published through Homebrew, or uploaded to TestFlight.
+Automated and local-bridge validation passed, and the owner reported a successful physical dictation smoke test after the protected Whisper recording fix. The full physical fallback/provider matrix and locked-device file-protection check remain post-release beta validation items.
 
 ## Dictation pipelines
 
@@ -38,4 +38,4 @@ Cloud transcription failures fall back to Apple's on-device file transcription. 
 
 When upgrading Herdr with running sessions, run `herdr update --handoff` from a terminal outside Herdr.
 
-**Changes since 0.1.0:** https://github.com/DanielOu1208/agentslate/compare/v0.1.0...main
+**Changes since 0.1.0:** https://github.com/DanielOu1208/agentslate/compare/v0.1.0...v0.2.0
