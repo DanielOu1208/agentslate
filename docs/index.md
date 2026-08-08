@@ -29,6 +29,12 @@ Enter the Mac's Tailscale address and the six-digit pairing code in the iPhone a
 
 AgentSlate is beta software. Keep the target terminal visible and review every permission prompt before accepting it.
 
+## What's new in 0.2.0
+
+AgentSlate 0.2.0 adds three explicit dictation choices: Apple On-Device, OpenRouter-routed Whisper, and Soniox v5 Real-Time. Cloud modes use API keys that you supply, support optional transcript cleanup, and fall back to Apple's speech framework when transcription fails.
+
+[Read the AgentSlate 0.2.0 release notes](https://github.com/DanielOu1208/agentslate/blob/main/RELEASE_NOTES_0.2.0.md)
+
 ## Independent project
 
 AgentSlate is not affiliated with, endorsed by, or sponsored by Herdr, Tailscale, Apple, or any coding-agent vendor. Product names and marks belong to their respective owners.

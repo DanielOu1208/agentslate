@@ -32,7 +32,7 @@ The terminal stays on the Mac. The phone shows agent status and acts as the cont
 - **Live agent dashboard** — see Herdr sessions, workspaces, and agent states, with blocked agents brought forward.
 - **Focused remote controls** — send arrows, Enter, Escape, Tab, Shift+Tab, Space, or short text to the selected agent.
 - **Watched-screen actions** — use Accept and Deny shortcuts only when a supported agent is visibly blocked.
-- **Choose your voice pipeline** — use Apple's on-device transcription by default, or opt into OpenRouter-routed Whisper transcription and cleanup with automatic Apple fallback.
+- **Choose your voice pipeline** — use Apple's on-device transcription by default, OpenRouter-routed Whisper for recorded speech, or Soniox v5 for live transcription, with optional cleanup and automatic Apple fallback.
 - **Direct and private** — connect over Tailscale with a single-use pairing code and a revocable per-device credential.
 - **Offline Demo Mode** — explore the complete keypad with fixed sample agents and no bridge connection.
 
@@ -149,6 +149,7 @@ Public support belongs in [GitHub Issues](https://github.com/DanielOu1208/agents
 
 ## Project documents
 
+- [AgentSlate 0.2.0 release notes](RELEASE_NOTES_0.2.0.md)
 - [Product requirements](docs/PRD.md)
 - [Protocol v3](docs/PROTOCOL.md)
 - [Implementation tracker](docs/IMPLEMENTATION_TRACKER.md)

@@ -5,15 +5,18 @@
 - Marketing version: `0.2.0`
 - Build: `5`
 - Minimum Herdr: `0.8.0` (local protocol 19)
-- Status: local preparation and automated validation only
+- Status: draft PR and source-release preparation; publication pending
 
-The 0.2 candidate includes the optional OpenRouter and Soniox dictation work. Do not push the branch or candidate commits, create or push a release tag, update the Homebrew formula or tap, upload to TestFlight, or change App Store Connect until the owner completes physical-iPhone testing and gives explicit approval.
+The 0.2 candidate includes Apple on-device dictation, optional OpenRouter-routed Whisper, and Soniox real-time transcription. The owner authorized pushing the candidate PR and documentation and creating a draft GitHub release page. Do not merge the PR, create or push a release tag, publish the draft release, update the Homebrew formula or tap, upload to TestFlight, or change App Store Connect without the corresponding explicit approval.
 
-- [ ] Complete physical Apple, OpenRouter, Soniox, fallback, haptic, and latency acceptance.
+- [x] Owner manually smoke-tested dictation after the protected Whisper recording fix and reported it working well.
+- [ ] Complete the remaining fallback, interruption, two-minute cutoff, haptic, and latency acceptance matrix.
 - [ ] Confirm live control against Herdr 0.8.0 on the owner's Mac and iPhone.
+- [ ] Receive explicit owner approval to merge the source PR.
+- [ ] After merge approval, merge the PR and wait for `main` CI before publishing a source release.
 - [ ] Receive explicit owner approval for the TestFlight upload.
 - [ ] After approval, upload `0.2.0 (5)` and update the existing external beta group.
-- [ ] After separate source-release approval, tag `v0.2.0`, calculate its archive checksum, and update the Homebrew formula and tap.
+- [ ] After separate source-release approval, publish the draft `v0.2.0` release, calculate its archive checksum, and update the Homebrew formula and tap.
 
 ## 0.1.0 historical release
 
