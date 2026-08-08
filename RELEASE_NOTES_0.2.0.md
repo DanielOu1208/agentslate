@@ -2,6 +2,8 @@
 
 AgentSlate 0.2.0 expands voice input into a choice of private on-device dictation or user-funded cloud transcription, while improving terminal controls, compatibility, recovery, and security.
 
+[Join the public TestFlight beta](https://testflight.apple.com/join/T1bCGkH6). Install or upgrade the Mac bridge with `brew install DanielOu1208/agentslate/agentslate`.
+
 Automated and local-bridge validation passed, and the owner reported a successful physical dictation smoke test after the protected Whisper recording fix. The full physical fallback/provider matrix and locked-device file-protection check remain post-release beta validation items.
 
 ## Dictation pipelines
