@@ -418,18 +418,170 @@ func sonioxConfigurationAndTranscriptAssembly() throws {
   #expect(recoverableSonioxPartial(" \n ") == nil)
 
   var transcript = SonioxTranscriptAssembler()
-  transcript.apply([SonioxToken(text: "hel", isFinal: false)])
+  try transcript.apply([SonioxToken(text: "hel", isFinal: false)])
   #expect(transcript.currentText == "hel")
-  transcript.apply([
+  try transcript.apply([
     SonioxToken(text: "Hello ", isFinal: true),
     SonioxToken(text: "wor", isFinal: false),
   ])
   #expect(transcript.currentText == "Hello wor")
-  transcript.apply([
+  try transcript.apply([
     SonioxToken(text: "world", isFinal: true),
     SonioxToken(text: "<end>", isFinal: true),
   ])
   #expect(transcript.currentText == "Hello world")
+}
+
+@Test
+func providerHTTPResponsesAreBoundedWithoutTruncation() async throws {
+  let configuration = URLSessionConfiguration.ephemeral
+  configuration.protocolClasses = [ProviderResponseURLProtocol.self]
+  let client = CloudDictationClient(session: URLSession(configuration: configuration))
+  let audioURL = FileManager.default.temporaryDirectory
+    .appendingPathComponent(UUID().uuidString)
+  try Data().write(to: audioURL)
+  defer { try? FileManager.default.removeItem(at: audioURL) }
+
+  #expect(try await client.transcribe(audioURL: audioURL, apiKey: "exact") == "ok")
+
+  do {
+    _ = try await client.cleanup(transcript: "test", apiKey: "over")
+    Issue.record("Expected an oversized streamed response to fail")
+  } catch {
+    #expect(error as? CloudDictationClient.Failure == .responseBodyTooLarge)
+  }
+
+  do {
+    _ = try await client.cleanup(transcript: "test", apiKey: "declared-over")
+    Issue.record("Expected an oversized Content-Length to fail")
+  } catch {
+    #expect(error as? CloudDictationClient.Failure == .responseBodyTooLarge)
+  }
+}
+
+@Test
+func cloudDecodedTextIsBoundedWithoutTruncation() async throws {
+  let configuration = URLSessionConfiguration.ephemeral
+  configuration.protocolClasses = [ProviderResponseURLProtocol.self]
+  let client = CloudDictationClient(session: URLSession(configuration: configuration))
+  let audioURL = FileManager.default.temporaryDirectory
+    .appendingPathComponent(UUID().uuidString)
+  try Data().write(to: audioURL)
+  defer { try? FileManager.default.removeItem(at: audioURL) }
+
+  let exactText = String(repeating: "a", count: ProviderResponseLimits.transcriptBytes)
+  #expect(try await client.transcribe(audioURL: audioURL, apiKey: "text-exact") == exactText)
+  #expect(try await client.cleanup(transcript: "test", apiKey: "text-exact") == exactText)
+
+  for operation in [
+    { try await client.transcribe(audioURL: audioURL, apiKey: "text-over") },
+    { try await client.cleanup(transcript: "test", apiKey: "text-over") },
+  ] {
+    do {
+      _ = try await operation()
+      Issue.record("Expected oversized decoded provider text to fail")
+    } catch {
+      #expect(error as? CloudDictationClient.Failure == .transcriptTooLarge)
+    }
+  }
+}
+
+@Test
+func cloudWAVInputIsBoundedBeforeAndAfterRead() async throws {
+  let configuration = URLSessionConfiguration.ephemeral
+  configuration.protocolClasses = [ProviderResponseURLProtocol.self]
+  let client = CloudDictationClient(session: URLSession(configuration: configuration))
+  let directory = FileManager.default.temporaryDirectory
+  let exactURL = directory.appendingPathComponent(UUID().uuidString)
+  let overURL = directory.appendingPathComponent(UUID().uuidString)
+  defer {
+    try? FileManager.default.removeItem(at: exactURL)
+    try? FileManager.default.removeItem(at: overURL)
+  }
+
+  try Data(repeating: 0, count: ProviderResponseLimits.wavAudioBytes).write(to: exactURL)
+  #expect(try await client.transcribe(audioURL: exactURL, apiKey: "normal") == "ok")
+
+  try Data(repeating: 0, count: ProviderResponseLimits.wavAudioBytes + 1).write(to: overURL)
+  do {
+    _ = try await client.transcribe(audioURL: overURL, apiKey: "normal")
+    Issue.record("Expected an oversized WAV input to fail")
+  } catch {
+    #expect(error as? CloudDictationClient.Failure == .audioInputTooLarge)
+  }
+}
+
+@Test
+func sonioxFramesAreBoundedAndNormalResponsesDecode() async throws {
+  let normal = SonioxRealtimeClient(webSocketTaskFactory: { _ in
+    FakeSonioxWebSocketTask(
+      .data(Data(#"{"tokens":[{"text":"ok","is_final":true}],"finished":true}"#.utf8)))
+  })
+  #expect(try await normal.transcribe(apiKey: "key", audio: emptyAudioStream()) { _ in } == "ok")
+
+  let exactJSON = Data(#"{"tokens":[{"text":"ok","is_final":true}],"finished":true}"#.utf8)
+  let exactFrame =
+    String(decoding: exactJSON, as: UTF8.self)
+    + String(repeating: " ", count: ProviderResponseLimits.sonioxFrameBytes - exactJSON.count)
+  let exact = SonioxRealtimeClient(webSocketTaskFactory: { _ in
+    FakeSonioxWebSocketTask(.string(exactFrame))
+  })
+  #expect(try await exact.transcribe(apiKey: "key", audio: emptyAudioStream()) { _ in } == "ok")
+
+  let over = SonioxRealtimeClient(webSocketTaskFactory: { _ in
+    FakeSonioxWebSocketTask(
+      .data(Data(repeating: 0, count: ProviderResponseLimits.sonioxFrameBytes + 1)))
+  })
+  do {
+    _ = try await over.transcribe(apiKey: "key", audio: emptyAudioStream()) { _ in }
+    Issue.record("Expected an oversized Soniox frame to fail")
+  } catch {
+    #expect(error as? SonioxRealtimeClient.Failure == .responseFrameTooLarge)
+  }
+}
+
+@Test
+func sonioxAudioStreamIsBoundedToTwoMinutesOfPCM() async throws {
+  let response = URLSessionWebSocketTask.Message.string(
+    #"{"tokens":[{"text":"ok","is_final":true}],"finished":true}"#)
+  let exact = SonioxRealtimeClient(webSocketTaskFactory: { _ in
+    FakeSonioxWebSocketTask(response, receiveDelay: .milliseconds(50))
+  })
+  #expect(
+    try await exact.transcribe(
+      apiKey: "key",
+      audio: audioStream(Data(repeating: 0, count: ProviderResponseLimits.sonioxAudioBytes))
+    ) { _ in } == "ok")
+
+  let over = SonioxRealtimeClient(webSocketTaskFactory: { _ in
+    FakeSonioxWebSocketTask(response, receiveDelay: .milliseconds(50))
+  })
+  do {
+    _ = try await over.transcribe(
+      apiKey: "key",
+      audio: audioStream(Data(repeating: 0, count: ProviderResponseLimits.sonioxAudioBytes + 1))
+    ) { _ in }
+    Issue.record("Expected an oversized Soniox audio stream to fail")
+  } catch {
+    #expect(error as? SonioxRealtimeClient.Failure == .audioStreamTooLarge)
+  }
+}
+
+@Test
+func sonioxTranscriptLimitDoesNotCommitOverflow() throws {
+  var transcript = SonioxTranscriptAssembler()
+  let atLimit = String(repeating: "🙂", count: ProviderResponseLimits.transcriptBytes / 4)
+  try transcript.apply([SonioxToken(text: atLimit, isFinal: true)])
+  #expect(transcript.currentText.utf8.count == ProviderResponseLimits.transcriptBytes)
+
+  do {
+    try transcript.apply([SonioxToken(text: "b", isFinal: true)])
+    Issue.record("Expected an oversized Soniox transcript to fail")
+  } catch {
+    #expect(error as? SonioxRealtimeClient.Failure == .transcriptTooLarge)
+  }
+  #expect(transcript.finalizedText == atLimit)
+  #expect(transcript.provisionalText.isEmpty)
 }
 
 @Test
@@ -536,4 +688,77 @@ func offlineDemoUsesFixedLocalStateAndAcknowledgesCommands() async {
   #expect(model.successFeedback == 1)
   #expect(await model.send(text: "demo prompt"))
   #expect(model.successFeedback == 2)
+}
+
+private final class ProviderResponseURLProtocol: URLProtocol, @unchecked Sendable {
+  override class func canInit(with request: URLRequest) -> Bool { true }
+  override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+  override func startLoading() {
+    let key = request.value(forHTTPHeaderField: "Authorization")?.dropFirst("Bearer ".count) ?? ""
+    let textCount: Int?
+    switch key {
+    case "text-exact": textCount = ProviderResponseLimits.transcriptBytes
+    case "text-over": textCount = ProviderResponseLimits.transcriptBytes + 1
+    default: textCount = nil
+    }
+    let text = textCount.map { String(repeating: "a", count: $0) } ?? "ok"
+    let base: Data
+    if request.url?.path.contains("chat/completions") == true {
+      base = Data(#"{"choices":[{"message":{"role":"assistant","content":"\#(text)"}}]}"#.utf8)
+    } else {
+      base = Data(#"{"text":"\#(text)"}"#.utf8)
+    }
+    let size: Int
+    var headers: [String: String]? = nil
+    switch key {
+    case "exact":
+      size = ProviderResponseLimits.httpResponseBodyBytes
+    case "over":
+      size = ProviderResponseLimits.httpResponseBodyBytes + 1
+    case "declared-over":
+      size = base.count
+      headers = ["Content-Length": "\(ProviderResponseLimits.httpResponseBodyBytes + 1)"]
+    default:
+      size = base.count
+    }
+    var body = base
+    body.append(Data(repeating: 0x20, count: size - body.count))
+    let response = HTTPURLResponse(
+      url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: headers)!
+    client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+    client?.urlProtocol(self, didLoad: body)
+    client?.urlProtocolDidFinishLoading(self)
+  }
+
+  override func stopLoading() {}
+}
+
+private final class FakeSonioxWebSocketTask: SonioxWebSocketTask, @unchecked Sendable {
+  private let message: URLSessionWebSocketTask.Message
+  private let receiveDelay: Duration
+
+  init(_ message: URLSessionWebSocketTask.Message, receiveDelay: Duration = .zero) {
+    self.message = message
+    self.receiveDelay = receiveDelay
+  }
+
+  func resume() {}
+  func cancel(with closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {}
+  func send(_ message: URLSessionWebSocketTask.Message) async throws {}
+  func receive() async throws -> URLSessionWebSocketTask.Message {
+    try await Task.sleep(for: receiveDelay)
+    return message
+  }
+}
+
+private func emptyAudioStream() -> AsyncStream<Data> {
+  AsyncStream { $0.finish() }
+}
+
+private func audioStream(_ data: Data) -> AsyncStream<Data> {
+  AsyncStream {
+    $0.yield(data)
+    $0.finish()
+  }
 }

@@ -133,11 +133,15 @@ public actor BridgeClient {
   }
 
   public nonisolated let events: AsyncStream<BridgeEvent>
+  public nonisolated let herdrErrors: AsyncStream<HerdrSessionError>
+  public nonisolated let updates: AsyncStream<BridgeUpdate>
 
   private let host: NWEndpoint.Host
   private let port: NWEndpoint.Port
   private let credential: BridgeCredential
   private let eventContinuation: AsyncStream<BridgeEvent>.Continuation
+  private let herdrErrorContinuation: AsyncStream<HerdrSessionError>.Continuation
+  private let updateContinuation: AsyncStream<BridgeUpdate>.Continuation
   private let queue = DispatchQueue(label: "AgentSlateClient.BridgeClient")
 
   private var reconnectTask: Task<Void, Never>?
@@ -146,6 +150,8 @@ public actor BridgeClient {
   private var nextRequestID = 0
   private var reconnectAttempt = 0
   private var lifecycle = Lifecycle.stopped
+
+  private static let eventBufferLimit = 256
 
   public init(host: String, port: UInt16 = 8765, credential: BridgeCredential) throws {
     guard !host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, port != 0 else {
@@ -158,9 +164,24 @@ public actor BridgeClient {
     self.host = NWEndpoint.Host(host)
     self.port = NWEndpoint.Port(rawValue: port)!
     self.credential = credential
-    let stream = AsyncStream.makeStream(of: BridgeEvent.self)
+    let stream = AsyncStream.makeStream(
+      of: BridgeEvent.self,
+      bufferingPolicy: .bufferingNewest(Self.eventBufferLimit)
+    )
     events = stream.stream
     eventContinuation = stream.continuation
+    let herdrErrorStream = AsyncStream.makeStream(
+      of: HerdrSessionError.self,
+      bufferingPolicy: .bufferingNewest(Self.eventBufferLimit)
+    )
+    herdrErrors = herdrErrorStream.stream
+    herdrErrorContinuation = herdrErrorStream.continuation
+    let updateStream = AsyncStream.makeStream(
+      of: BridgeUpdate.self,
+      bufferingPolicy: .bufferingNewest(Self.eventBufferLimit)
+    )
+    updates = updateStream.stream
+    updateContinuation = updateStream.continuation
   }
 
   public static func pair(
@@ -193,7 +214,7 @@ public actor BridgeClient {
         Self.isLowerHex(credential.credential, count: 64)
       else { throw BridgeError.protocolViolation("paired credential is invalid") }
       return credential
-    case .error(_, let code, let message):
+    case .error(_, _, let code, let message):
       throw BridgeError.remote(code: code, message: message)
     default:
       throw BridgeError.protocolViolation("pairing response is invalid")
@@ -414,8 +435,15 @@ public actor BridgeClient {
       emit(.agents(session: session, agents: agents))
     case .herdrState(let session, let state):
       emit(.herdrAvailability(session: session, state: state))
-    case .error:
-      emit(.error(remoteError(from: message)))
+    case .error(_, let session, _, _):
+      let error = remoteError(from: message)
+      if let session {
+        let event = HerdrSessionError(session: session, error: error)
+        herdrErrorContinuation.yield(event)
+        updateContinuation.yield(.herdrError(event))
+      } else {
+        emit(.error(error))
+      }
     case .paired, .authenticated, .agentFocused, .inputAcknowledged, .revoked, .pong, .unknown:
       break
     }
@@ -486,7 +514,7 @@ public actor BridgeClient {
   }
 
   private func remoteError(from message: WireMessage) -> BridgeError {
-    guard case .error(_, let code, let detail) = message else {
+    guard case .error(_, _, let code, let detail) = message else {
       return .protocolViolation("error response is invalid")
     }
     return code == "authentication_failed"
@@ -542,5 +570,6 @@ public actor BridgeClient {
 
   private func emit(_ event: BridgeEvent) {
     eventContinuation.yield(event)
+    updateContinuation.yield(.event(event))
   }
 }

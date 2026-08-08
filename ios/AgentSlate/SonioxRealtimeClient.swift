@@ -33,20 +33,38 @@ struct SonioxTranscriptAssembler: Sendable {
     (finalizedText + provisionalText).trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
-  mutating func apply(_ tokens: [SonioxToken]) {
+  mutating func apply(_ tokens: [SonioxToken]) throws {
     let visibleTokens = tokens.filter { !Self.controlTokens.contains($0.text) }
-    finalizedText += visibleTokens.filter(\.isFinal).map(\.text).joined()
-    provisionalText = visibleTokens.filter { !$0.isFinal }.map(\.text).joined()
+    let finalizedText = finalizedText + visibleTokens.filter(\.isFinal).map(\.text).joined()
+    let provisionalText = visibleTokens.filter { !$0.isFinal }.map(\.text).joined()
+    guard (finalizedText + provisionalText).utf8.count <= ProviderResponseLimits.transcriptBytes
+    else {
+      throw SonioxRealtimeClient.Failure.transcriptTooLarge
+    }
+    self.finalizedText = finalizedText
+    self.provisionalText = provisionalText
   }
 
   private static let controlTokens: Set<String> = ["<end>", "<fin>"]
 }
+
+protocol SonioxWebSocketTask: Sendable {
+  func resume()
+  func cancel(with closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?)
+  func send(_ message: URLSessionWebSocketTask.Message) async throws
+  func receive() async throws -> URLSessionWebSocketTask.Message
+}
+
+extension URLSessionWebSocketTask: SonioxWebSocketTask {}
 
 struct SonioxRealtimeClient: Sendable {
   enum Failure: LocalizedError, Equatable {
     case missingAPIKey
     case invalidResponse
     case providerError(status: Int, type: String?, message: String?)
+    case responseFrameTooLarge
+    case transcriptTooLarge
+    case audioStreamTooLarge
     case finalResponseTimedOut
     case emptyTranscript
     case connectionFailed
@@ -59,6 +77,12 @@ struct SonioxRealtimeClient: Sendable {
         "Soniox returned an invalid response."
       case .providerError(let status, let type, let message):
         "Soniox returned HTTP \(status): \(message ?? type ?? "Unknown provider error.")"
+      case .responseFrameTooLarge:
+        "The Soniox response was too large."
+      case .transcriptTooLarge:
+        "The Soniox transcript was too large."
+      case .audioStreamTooLarge:
+        "The Soniox audio stream was too long."
       case .finalResponseTimedOut:
         "Soniox did not finish the transcript in time."
       case .emptyTranscript:
@@ -78,10 +102,14 @@ struct SonioxRealtimeClient: Sendable {
   private static let endpoint = URL(
     string: "wss://stt-rt.soniox.com/transcribe-websocket")!
 
-  private let session: URLSession
+  private let makeWebSocketTask: @Sendable (URLRequest) -> any SonioxWebSocketTask
 
   init(session: URLSession = .shared) {
-    self.session = session
+    self.makeWebSocketTask = { session.webSocketTask(with: $0) }
+  }
+
+  init(webSocketTaskFactory: @escaping @Sendable (URLRequest) -> any SonioxWebSocketTask) {
+    self.makeWebSocketTask = webSocketTaskFactory
   }
 
   func transcribe(
@@ -92,7 +120,7 @@ struct SonioxRealtimeClient: Sendable {
     let configuration = try makeSonioxConfiguration(apiKey: apiKey)
     var request = URLRequest(url: Self.endpoint)
     request.timeoutInterval = 15
-    let socket = session.webSocketTask(with: request)
+    let socket = makeWebSocketTask(request)
 
     return try await withTaskCancellationHandler {
       try Task.checkCancellation()
@@ -115,7 +143,7 @@ struct SonioxRealtimeClient: Sendable {
   }
 
   private func transcribe(
-    socket: URLSessionWebSocketTask,
+    socket: any SonioxWebSocketTask,
     audio: AsyncStream<Data>,
     onPartial: @escaping @Sendable (String) async -> Void
   ) async throws -> String {
@@ -128,9 +156,14 @@ struct SonioxRealtimeClient: Sendable {
       }
 
       group.addTask {
+        var audioBytes = 0
         for await chunk in audio {
           try Task.checkCancellation()
           guard !chunk.isEmpty else { continue }
+          guard chunk.count <= ProviderResponseLimits.sonioxAudioBytes - audioBytes else {
+            throw Failure.audioStreamTooLarge
+          }
+          audioBytes += chunk.count
           try await socket.send(.data(chunk))
         }
         try Task.checkCancellation()
@@ -165,7 +198,7 @@ struct SonioxRealtimeClient: Sendable {
   }
 
   private func receiveTranscript(
-    from socket: URLSessionWebSocketTask,
+    from socket: any SonioxWebSocketTask,
     onPartial: @escaping @Sendable (String) async -> Void
   ) async throws -> String {
     var assembler = SonioxTranscriptAssembler()
@@ -180,7 +213,7 @@ struct SonioxRealtimeClient: Sendable {
           status: status, type: response.errorType, message: response.errorMessage)
       }
 
-      assembler.apply(response.tokens ?? [])
+      try assembler.apply(response.tokens ?? [])
       let currentText = assembler.currentText
       if !currentText.isEmpty, currentText != lastPartial {
         lastPartial = currentText
@@ -200,8 +233,14 @@ struct SonioxRealtimeClient: Sendable {
     let data: Data
     switch message {
     case .data(let value):
+      guard value.count <= ProviderResponseLimits.sonioxFrameBytes else {
+        throw Failure.responseFrameTooLarge
+      }
       data = value
     case .string(let value):
+      guard value.utf8.count <= ProviderResponseLimits.sonioxFrameBytes else {
+        throw Failure.responseFrameTooLarge
+      }
       data = Data(value.utf8)
     @unknown default:
       throw Failure.invalidResponse

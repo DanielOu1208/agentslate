@@ -92,6 +92,17 @@ import Testing
   #expect(credential.credential == String(repeating: "a", count: 64))
 }
 
+@Test func errorMessageDecodesRequestAndSessionAttribution() throws {
+  let data = Data(
+    #"{"version":3,"id":"request-1","type":"error","session":"team","code":"unsupported_herdr_version","message":"upgrade Herdr"}"#.utf8
+  )
+  let message = try JSONDecoder().decode(WireMessage.self, from: data)
+  guard case .error("request-1", "team", "unsupported_herdr_version", "upgrade Herdr") = message else {
+    Issue.record("error response did not retain its attribution")
+    return
+  }
+}
+
 @Test func reconnectDelayIsCappedAtFiveSeconds() {
   #expect(
     [1, 2, 3, 4, 5, 10].map(BridgeClient.reconnectDelayMilliseconds) == [

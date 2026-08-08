@@ -118,6 +118,21 @@ public enum BridgeEvent: Equatable, Sendable {
   case error(BridgeError)
 }
 
+public struct HerdrSessionError: Equatable, Sendable {
+  public let session: String
+  public let error: BridgeError
+
+  public init(session: String, error: BridgeError) {
+    self.session = session
+    self.error = error
+  }
+}
+
+public enum BridgeUpdate: Equatable, Sendable {
+  case event(BridgeEvent)
+  case herdrError(HerdrSessionError)
+}
+
 public enum BridgeError: Error, Equatable, Sendable {
   case invalidAddress
   case invalidPairingCode
@@ -242,7 +257,7 @@ enum WireMessage: Sendable {
   case revoked(id: String)
   case pong(id: String)
   case herdrState(session: String, state: HerdrAvailability)
-  case error(id: String?, code: String, message: String)
+  case error(id: String?, session: String?, code: String, message: String)
   case unknown(id: String?, type: String)
 
   var id: String? {
@@ -250,7 +265,7 @@ enum WireMessage: Sendable {
     case .paired(let id, _), .authenticated(let id), .agentFocused(let id),
       .inputAcknowledged(let id), .revoked(let id), .pong(let id):
       id
-    case .agentSnapshot(let id, _, _), .error(let id, _, _), .unknown(let id, _): id
+    case .agentSnapshot(let id, _, _), .error(let id, _, _, _), .unknown(let id, _): id
     case .sessionSnapshot, .herdrState: nil
     }
   }
@@ -317,6 +332,7 @@ extension WireMessage: Decodable {
     case "error":
       self = .error(
         id: try container.decodeIfPresent(String.self, forKey: .id),
+        session: try container.decodeIfPresent(String.self, forKey: .session),
         code: try container.decode(String.self, forKey: .code),
         message: try container.decode(String.self, forKey: .message)
       )

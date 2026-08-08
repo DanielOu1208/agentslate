@@ -18,6 +18,15 @@
 		1B0000000000000000000009 /* THIRD_PARTY_NOTICES.md in Resources */ = {isa = PBXBuildFile; fileRef = 1A000000000000000000000A /* THIRD_PARTY_NOTICES.md */; };
 		1B000000000000000000000A /* CloudDictationClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A000000000000000000000B /* CloudDictationClient.swift */; };
 		1B000000000000000000000B /* SonioxRealtimeClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A000000000000000000000C /* SonioxRealtimeClient.swift */; };
+		1B000000000000000000000C /* DictationRecordingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A000000000000000000000D /* DictationRecordingStore.swift */; };
+		1B000000000000000000000D /* PhaseOneSafetyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A000000000000000000000E /* PhaseOneSafetyTests.swift */; };
+		1B000000000000000000000E /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A000000000000000000000F /* KeychainStore.swift */; };
+		1B000000000000000000000F /* VoiceTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000000000000000000010 /* VoiceTypes.swift */; };
+		1B0000000000000000000010 /* AgentGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000000000000000000011 /* AgentGridView.swift */; };
+		1B0000000000000000000011 /* RemoteControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000000000000000000012 /* RemoteControlsView.swift */; };
+		1B0000000000000000000012 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000000000000000000013 /* SettingsView.swift */; };
+		1B0000000000000000000013 /* VoiceSessionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000000000000000000014 /* VoiceSessionCoordinator.swift */; };
+		1B0000000000000000000014 /* AudioCaptureSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000000000000000000015 /* AudioCaptureSupport.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -43,6 +52,15 @@
 		1A000000000000000000000A /* THIRD_PARTY_NOTICES.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = ../THIRD_PARTY_NOTICES.md; sourceTree = SOURCE_ROOT; };
 		1A000000000000000000000B /* CloudDictationClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudDictationClient.swift; sourceTree = "<group>"; };
 		1A000000000000000000000C /* SonioxRealtimeClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SonioxRealtimeClient.swift; sourceTree = "<group>"; };
+		1A000000000000000000000D /* DictationRecordingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationRecordingStore.swift; sourceTree = "<group>"; };
+		1A000000000000000000000E /* PhaseOneSafetyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhaseOneSafetyTests.swift; sourceTree = "<group>"; };
+		1A000000000000000000000F /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		1A0000000000000000000010 /* VoiceTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTypes.swift; sourceTree = "<group>"; };
+		1A0000000000000000000011 /* AgentGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentGridView.swift; sourceTree = "<group>"; };
+		1A0000000000000000000012 /* RemoteControlsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteControlsView.swift; sourceTree = "<group>"; };
+		1A0000000000000000000013 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		1A0000000000000000000014 /* VoiceSessionCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceSessionCoordinator.swift; sourceTree = "<group>"; };
+		1A0000000000000000000015 /* AudioCaptureSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCaptureSupport.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -82,6 +100,14 @@
 				1A0000000000000000000008 /* VoiceDictationController.swift */,
 				1A000000000000000000000B /* CloudDictationClient.swift */,
 				1A000000000000000000000C /* SonioxRealtimeClient.swift */,
+				1A000000000000000000000D /* DictationRecordingStore.swift */,
+				1A000000000000000000000F /* KeychainStore.swift */,
+				1A0000000000000000000010 /* VoiceTypes.swift */,
+				1A0000000000000000000011 /* AgentGridView.swift */,
+				1A0000000000000000000012 /* RemoteControlsView.swift */,
+				1A0000000000000000000013 /* SettingsView.swift */,
+				1A0000000000000000000014 /* VoiceSessionCoordinator.swift */,
+				1A0000000000000000000015 /* AudioCaptureSupport.swift */,
 				1A0000000000000000000007 /* Assets.xcassets */,
 				1A0000000000000000000009 /* PrivacyInfo.xcprivacy */,
 				1A000000000000000000000A /* THIRD_PARTY_NOTICES.md */,
@@ -93,6 +119,7 @@
 			isa = PBXGroup;
 			children = (
 				1A0000000000000000000004 /* AppModelTests.swift */,
+				1A000000000000000000000E /* PhaseOneSafetyTests.swift */,
 			);
 			path = AgentSlateTests;
 			sourceTree = "<group>";
@@ -219,6 +246,14 @@
 				1B0000000000000000000007 /* VoiceDictationController.swift in Sources */,
 				1B000000000000000000000A /* CloudDictationClient.swift in Sources */,
 				1B000000000000000000000B /* SonioxRealtimeClient.swift in Sources */,
+				1B000000000000000000000C /* DictationRecordingStore.swift in Sources */,
+				1B000000000000000000000E /* KeychainStore.swift in Sources */,
+				1B000000000000000000000F /* VoiceTypes.swift in Sources */,
+				1B0000000000000000000010 /* AgentGridView.swift in Sources */,
+				1B0000000000000000000011 /* RemoteControlsView.swift in Sources */,
+				1B0000000000000000000012 /* SettingsView.swift in Sources */,
+				1B0000000000000000000013 /* VoiceSessionCoordinator.swift in Sources */,
+				1B0000000000000000000014 /* AudioCaptureSupport.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -227,6 +262,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				1B0000000000000000000004 /* AppModelTests.swift in Sources */,
+				1B000000000000000000000D /* PhaseOneSafetyTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

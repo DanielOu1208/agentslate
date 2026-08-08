@@ -33,6 +33,7 @@ private final class FakeBridge: @unchecked Sendable {
   private let dropOnPing: Bool
   private let ignorePing: Bool
   private let unsupportedHerdr: Bool
+  private let unsolicitedGlobalError: Bool
   private var connections = 0
   private var snapshotRequests = 0
   private var recorded: [RecordedRequest] = []
@@ -42,13 +43,15 @@ private final class FakeBridge: @unchecked Sendable {
     dropFirstConnection: Bool = false,
     dropOnPing: Bool = false,
     ignorePing: Bool = false,
-    unsupportedHerdr: Bool = false
+    unsupportedHerdr: Bool = false,
+    unsolicitedGlobalError: Bool = false
   ) throws {
     self.rejectAuthentication = rejectAuthentication
     self.dropFirstConnection = dropFirstConnection
     self.dropOnPing = dropOnPing
     self.ignorePing = ignorePing
     self.unsupportedHerdr = unsupportedHerdr
+    self.unsolicitedGlobalError = unsolicitedGlobalError
     listener = try NWListener(using: .tcp, on: .any)
   }
 
@@ -173,6 +176,12 @@ private final class FakeBridge: @unchecked Sendable {
           messages.append(
             event(type: "herdr_state", extra: ["session": "default", "state": "connected"]))
           messages.append(snapshot(eventID: 2))
+        }
+        if unsolicitedGlobalError {
+          messages.append(
+            event(
+              type: "error",
+              extra: ["code": "bridge_warning", "message": "bridge warning"]))
         }
         handler.send(messages)
       }
@@ -453,6 +462,74 @@ private func withTimeout<T: Sendable>(
     port: port,
     credential: testCredential
   )
+  let failure = Task { () throws -> (String, BridgeError) in
+    for await event in client.herdrErrors {
+      return (event.session, event.error)
+    }
+    throw TestFailure.timeout
+  }
+
+  await client.start()
+  let reported = try await withTimeout { try await failure.value }
+  #expect(reported.0 == "default")
+  #expect(
+    reported.1 == .remote(
+        code: "unsupported_herdr_version",
+        message: "Herdr 0.8.0 or newer is required on the connected Mac"
+      ))
+  await client.stop()
+  bridge.stop()
+}
+
+@Test func combinedUpdatesPreserveSessionErrorWireOrder() async throws {
+  let bridge = try FakeBridge(unsupportedHerdr: true)
+  let port = try await bridge.start()
+  let client = try BridgeClient(
+    host: "127.0.0.1",
+    port: port,
+    credential: testCredential
+  )
+  let updates = Task { () throws -> [BridgeUpdate] in
+    var relevant: [BridgeUpdate] = []
+    for await update in client.updates {
+      switch update {
+      case .herdrError,
+        .event(.herdrAvailability(session: "default", state: .unavailable)):
+        relevant.append(update)
+      default:
+        continue
+      }
+      if relevant.count == 2 { return relevant }
+    }
+    throw TestFailure.timeout
+  }
+
+  await client.start()
+  let reported = try await withTimeout { try await updates.value }
+  #expect(reported.count == 2)
+  if reported.count == 2 {
+    guard case .herdrError = reported[0] else {
+      Issue.record("session error did not retain wire order")
+      return
+    }
+    guard case .event(.herdrAvailability(session: "default", state: .unavailable)) = reported[1]
+    else {
+      Issue.record("availability did not retain wire order")
+      return
+    }
+  }
+  await client.stop()
+  bridge.stop()
+}
+
+@Test func unsolicitedGlobalErrorIsReported() async throws {
+  let bridge = try FakeBridge(unsolicitedGlobalError: true)
+  let port = try await bridge.start()
+  let client = try BridgeClient(
+    host: "127.0.0.1",
+    port: port,
+    credential: testCredential
+  )
   let failure = Task { () throws -> BridgeError in
     for await event in client.events {
       if case .error(let error) = event {
@@ -465,10 +542,7 @@ private func withTimeout<T: Sendable>(
   await client.start()
   #expect(
     try await withTimeout { try await failure.value }
-      == .remote(
-        code: "unsupported_herdr_version",
-        message: "Herdr 0.8.0 or newer is required on the connected Mac"
-      ))
+      == .remote(code: "bridge_warning", message: "bridge warning"))
   await client.stop()
   bridge.stop()
 }

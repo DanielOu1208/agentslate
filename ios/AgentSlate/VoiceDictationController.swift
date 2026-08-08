@@ -20,13 +20,33 @@ private func audioLevel(for buffer: AVAudioPCMBuffer) -> Double {
 
 /// Hold-to-talk dictation with optional user-funded cloud transcription and on-device fallback.
 actor VoiceDictationController {
+  private enum CaptureState {
+    case idle
+    case prepared(DictationMode)
+    case listening(DictationMode)
+    case finalizing(DictationMode)
+
+    var isListening: Bool {
+      if case .listening = self { true } else { false }
+    }
+
+    var isActive: Bool {
+      switch self {
+      case .listening, .finalizing: true
+      case .idle, .prepared: false
+      }
+    }
+  }
+
   enum Failure: LocalizedError {
     case permissionDenied
     case localeNotSupported
     case assetUnavailable
     case audioSetupFailed
     case notListening
+    case captureBusy
     case transcriptionFailed
+    case recordingStorageFailed
     case sonioxAndAppleFallbackFailed(soniox: String, apple: String)
 
     var errorDescription: String? {
@@ -41,15 +61,19 @@ actor VoiceDictationController {
         "Could not start the microphone for dictation."
       case .notListening:
         "Voice dictation is not active."
+      case .captureBusy:
+        "Voice dictation is already active."
       case .transcriptionFailed:
         "Cloud and on-device transcription both failed. Try again."
+      case .recordingStorageFailed:
+        "Could not secure temporary dictation storage."
       case .sonioxAndAppleFallbackFailed(let soniox, let apple):
         "Soniox could not finish: \(soniox) Apple fallback also failed: \(apple)"
       }
     }
   }
 
-  private(set) var isListening = false
+  var isListening: Bool { captureState.isListening }
   private(set) var finalizedText = ""
   private(set) var volatileText = ""
   private(set) var lastPartial = ""
@@ -59,6 +83,7 @@ actor VoiceDictationController {
   private let audioEngine = AVAudioEngine()
   private let cloudClient: CloudDictationClient
   private let sonioxClient: SonioxRealtimeClient
+  private let recordingStore: DictationRecordingStore
   private var transcriber: DictationTranscriber?
   private var analyzer: SpeechAnalyzer?
   private var inputBuilder: AsyncStream<AnalyzerInput>.Continuation?
@@ -70,7 +95,7 @@ actor VoiceDictationController {
   private var microphonePrepared = false
   private var audioSessionConfigured = false
   private var applePrepared = false
-  private var activeMode: DictationMode = .apple
+  private var captureState: CaptureState = .idle
   private var recorder: AVAudioRecorder?
   private var recordingURL: URL?
   private var sonioxFormat: AVAudioFormat?
@@ -80,20 +105,25 @@ actor VoiceDictationController {
   private var meterTask: Task<Void, Never>?
   private var tapInstalled = false
   private var cancellationRequested = false
+  private var recordingStorePrepared = false
   private var onPartial: (@MainActor @Sendable (String) -> Void)?
   private var onLevel: (@MainActor @Sendable (Double) -> Void)?
   private var onFailure: (@MainActor @Sendable (any Error) async -> Void)?
 
   init(
     cloudClient: CloudDictationClient = CloudDictationClient(),
-    sonioxClient: SonioxRealtimeClient = SonioxRealtimeClient()
+    sonioxClient: SonioxRealtimeClient = SonioxRealtimeClient(),
+    recordingStore: DictationRecordingStore = DictationRecordingStore()
   ) {
     self.cloudClient = cloudClient
     self.sonioxClient = sonioxClient
+    self.recordingStore = recordingStore
   }
 
   func isPrepared(for mode: DictationMode) -> Bool {
-    guard microphonePrepared else { return false }
+    guard microphonePrepared, case .prepared(let preparedMode) = captureState,
+      preparedMode == mode
+    else { return false }
     return switch mode {
     case .apple:
       applePrepared && transcriber != nil && analyzer != nil && analyzerFormat != nil
@@ -105,6 +135,19 @@ actor VoiceDictationController {
   }
 
   func prepare(for mode: DictationMode) async throws {
+    if isPrepared(for: mode) { return }
+    guard !captureState.isActive else { throw Failure.captureBusy }
+    discardRecording()
+    finishSession(for: sessionGeneration)
+
+    if !recordingStorePrepared {
+      do {
+        try recordingStore.purgeOrphans()
+        recordingStorePrepared = true
+      } catch {
+        throw Failure.recordingStorageFailed
+      }
+    }
     if !microphonePrepared {
       guard await AVAudioApplication.requestRecordPermission() else {
         throw Failure.permissionDenied
@@ -122,6 +165,7 @@ actor VoiceDictationController {
     case .soniox:
       try prepareSonioxRecording()
     }
+    captureState = .prepared(mode)
   }
 
   private func prepareApple() async throws {
@@ -172,7 +216,7 @@ actor VoiceDictationController {
     onLevel: @escaping @MainActor @Sendable (Double) -> Void,
     onFailure: @escaping @MainActor @Sendable (any Error) async -> Void
   ) async throws {
-    guard !isListening else { return }
+    guard !captureState.isActive else { return }
     if !isPrepared(for: mode) { try await prepare(for: mode) }
     try Task.checkCancellation()
 
@@ -186,15 +230,14 @@ actor VoiceDictationController {
     lastPartial = ""
     cancellationRequested = false
     resultFailure = nil
-    activeMode = mode
     await onPartial("")
     await onLevel(0)
 
     switch mode {
     case .openRouter:
       do {
+        captureState = .listening(mode)
         try startCloudRecording()
-        isListening = true
         startCloudMetering(generation: generation)
       } catch {
         discardRecording()
@@ -204,8 +247,8 @@ actor VoiceDictationController {
       return
     case .soniox(let apiKey, _):
       do {
+        captureState = .listening(mode)
         try startSonioxRecording(apiKey: apiKey, generation: generation)
-        isListening = true
       } catch {
         discardRecording()
         finishSession(for: generation)
@@ -247,7 +290,7 @@ actor VoiceDictationController {
       throw Failure.audioSetupFailed
     }
 
-    isListening = true
+    captureState = .listening(.apple)
   }
 
   private func collectLiveResults(
@@ -283,10 +326,11 @@ actor VoiceDictationController {
   func finalize(
     onPhase: @MainActor @Sendable (CloudDictationPhase) -> Void
   ) async throws -> DictationResult {
-    guard isListening else { throw Failure.notListening }
+    guard case .listening(let mode) = captureState else { throw Failure.notListening }
     let generation = sessionGeneration
+    captureState = .finalizing(mode)
 
-    switch activeMode {
+    switch mode {
     case .apple:
       let text = try await finalizeAppleCapture(generation: generation)
       return DictationResult(rawText: text, text: text, fallbackNotice: nil)
@@ -309,8 +353,6 @@ actor VoiceDictationController {
   private func finalizeAppleCapture(generation: Int) async throws -> String {
     let analyzer = analyzer
     let resultsTask = resultsTask
-    isListening = false
-
     stopCapture()
 
     do {
@@ -339,7 +381,6 @@ actor VoiceDictationController {
     cleanupAPIKey: String?,
     onPhase: @MainActor @Sendable (CloudDictationPhase) -> Void
   ) async throws -> DictationResult {
-    isListening = false
     stopMetering()
     recorder?.stop()
     recorder = nil
@@ -349,7 +390,7 @@ actor VoiceDictationController {
       throw Failure.audioSetupFailed
     }
     defer {
-      try? FileManager.default.removeItem(at: recordingURL)
+      recordingStore.remove(recordingURL)
       if generation == sessionGeneration { self.recordingURL = nil }
     }
 
@@ -390,7 +431,6 @@ actor VoiceDictationController {
     cleanupAPIKey: String?,
     onPhase: @MainActor @Sendable (CloudDictationPhase) -> Void
   ) async throws -> DictationResult {
-    isListening = false
     let sinkFailed = sonioxSink?.failed ?? true
     stopCapture()
     sonioxSink = nil
@@ -402,7 +442,7 @@ actor VoiceDictationController {
     }
     self.sonioxTask = nil
     defer {
-      try? FileManager.default.removeItem(at: recordingURL)
+      recordingStore.remove(recordingURL)
       if generation == sessionGeneration { self.recordingURL = nil }
     }
 
@@ -425,17 +465,23 @@ actor VoiceDictationController {
       } catch is CancellationError {
         throw CancellationError()
       } catch let appleError {
-        if let partial = recoverableSonioxPartial(lastPartial) {
-          rawText = partial
-          notice =
-            "Soniox could not finalize and Apple fallback was unavailable; used the latest live transcript."
-        } else {
+        guard recoverableSonioxPartial(lastPartial) != nil else {
           finishSession(for: generation)
           throw Failure.sonioxAndAppleFallbackFailed(
             soniox: sonioxError.localizedDescription,
             apple: appleError.localizedDescription
           )
         }
+        let partial = lastPartial
+        let notice =
+          "Soniox could not finalize and Apple fallback was unavailable. Review the latest live transcript before sending."
+        finishSession(for: generation)
+        return DictationResult(
+          rawText: partial,
+          text: partial,
+          fallbackNotice: notice,
+          delivery: .reviewRequired
+        )
       }
     }
 
@@ -491,7 +537,7 @@ actor VoiceDictationController {
     let resultsTask = resultsTask
     cancellationRequested = true
     guard
-      isListening || analyzer != nil || recorder != nil || sonioxTask != nil
+      captureState.isActive || analyzer != nil || recorder != nil || sonioxTask != nil
         || recordingURL != nil
     else {
       finishSession(for: generation)
@@ -527,7 +573,7 @@ actor VoiceDictationController {
     onPartial = nil
     onLevel = nil
     onFailure = nil
-    isListening = false
+    captureState = .idle
     try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
   }
 
@@ -561,22 +607,32 @@ actor VoiceDictationController {
 
   private func prepareCloudRecording() throws {
     guard recorder == nil, recordingURL == nil else { return }
-    let url = FileManager.default.temporaryDirectory
-      .appendingPathComponent("agentslate-\(UUID().uuidString)")
-      .appendingPathExtension("wav")
-    let recorder = try AVAudioRecorder(
-      url: url,
-      settings: [
-        AVFormatIDKey: kAudioFormatLinearPCM,
-        AVSampleRateKey: 16_000,
-        AVNumberOfChannelsKey: 1,
-        AVLinearPCMBitDepthKey: 16,
-        AVLinearPCMIsFloatKey: false,
-        AVLinearPCMIsBigEndianKey: false,
-      ])
+    let url = recordingStore.recordingURL(for: .openRouter)
+    let recorder: AVAudioRecorder
+    do {
+      recorder = try AVAudioRecorder(
+        url: url,
+        settings: [
+          AVFormatIDKey: kAudioFormatLinearPCM,
+          AVSampleRateKey: 16_000,
+          AVNumberOfChannelsKey: 1,
+          AVLinearPCMBitDepthKey: 16,
+          AVLinearPCMIsFloatKey: false,
+          AVLinearPCMIsBigEndianKey: false,
+        ])
+    } catch {
+      recordingStore.remove(url)
+      throw Failure.audioSetupFailed
+    }
+    do {
+      try recordingStore.protect(url)
+    } catch {
+      recordingStore.remove(url)
+      throw Failure.recordingStorageFailed
+    }
     recorder.isMeteringEnabled = true
     guard recorder.prepareToRecord() else {
-      try? FileManager.default.removeItem(at: url)
+      recordingStore.remove(url)
       throw Failure.audioSetupFailed
     }
     recordingURL = url
@@ -601,22 +657,30 @@ actor VoiceDictationController {
     else {
       throw Failure.audioSetupFailed
     }
-    let url = FileManager.default.temporaryDirectory
-      .appendingPathComponent("agentslate-soniox-\(UUID().uuidString)")
-      .appendingPathExtension("wav")
+    let url = recordingStore.recordingURL(for: .soniox)
+    let file: AVAudioFile
     do {
-      sonioxFile = try AVAudioFile(
+      file = try AVAudioFile(
         forWriting: url,
         settings: format.settings,
         commonFormat: .pcmFormatInt16,
         interleaved: true
       )
-      sonioxFormat = format
-      recordingURL = url
     } catch {
-      try? FileManager.default.removeItem(at: url)
+      recordingStore.remove(url)
       throw Failure.audioSetupFailed
     }
+
+    do {
+      try recordingStore.protect(url)
+    } catch {
+      recordingStore.remove(url)
+      throw Failure.recordingStorageFailed
+    }
+
+    sonioxFile = file
+    sonioxFormat = format
+    recordingURL = url
   }
 
   private func startSonioxRecording(apiKey: String, generation: Int) throws {
@@ -690,7 +754,7 @@ actor VoiceDictationController {
     sonioxFile = nil
     sonioxFormat = nil
     if let recordingURL {
-      try? FileManager.default.removeItem(at: recordingURL)
+      recordingStore.remove(recordingURL)
       self.recordingURL = nil
     }
   }
@@ -785,98 +849,4 @@ actor VoiceDictationController {
   }
 }
 
-/// Converts and fans out one Soniox capture stream to the socket and Apple fallback file.
-private final class SonioxAudioSink: @unchecked Sendable {
-  private let converter = AudioBufferConverter()
-  private let format: AVAudioFormat
-  private let file: AVAudioFile
-  private let builder: AsyncStream<Data>.Continuation
-  private let failureLock = NSLock()
-  private var hasFailed = false
-
-  init(
-    format: AVAudioFormat,
-    file: AVAudioFile,
-    builder: AsyncStream<Data>.Continuation
-  ) {
-    self.format = format
-    self.file = file
-    self.builder = builder
-  }
-
-  var failed: Bool {
-    failureLock.withLock { hasFailed }
-  }
-
-  func process(_ buffer: AVAudioPCMBuffer) {
-    guard !failed else { return }
-    do {
-      let converted = try converter.convert(buffer, to: format)
-      try file.write(from: converted)
-      let audioBuffer = converted.audioBufferList.pointee.mBuffers
-      guard let bytes = audioBuffer.mData, audioBuffer.mDataByteSize > 0 else { return }
-      builder.yield(Data(bytes: bytes, count: Int(audioBuffer.mDataByteSize)))
-    } catch {
-      failureLock.withLock { hasFailed = true }
-      builder.finish()
-    }
-  }
-
-  func finish() {
-    builder.finish()
-  }
-}
-
-/// Converts mic buffers to the format SpeechAnalyzer requests.
-/// Single-threaded: create one per capture session and call only from the audio tap.
-private final class AudioBufferConverter: @unchecked Sendable {
-  enum Failure: Error {
-    case cannotCreateConverter
-    case cannotCreateBuffer
-    case conversionFailed
-  }
-
-  private var converter: AVAudioConverter?
-
-  func convert(_ buffer: AVAudioPCMBuffer, to format: AVAudioFormat) throws -> AVAudioPCMBuffer {
-    let inputFormat = buffer.format
-    guard inputFormat != format else { return buffer }
-
-    if converter == nil || converter?.outputFormat != format {
-      converter = AVAudioConverter(from: inputFormat, to: format)
-      converter?.primeMethod = .none
-    }
-    guard let converter else { throw Failure.cannotCreateConverter }
-
-    let ratio = converter.outputFormat.sampleRate / converter.inputFormat.sampleRate
-    let capacity = AVAudioFrameCount((Double(buffer.frameLength) * ratio).rounded(.up))
-    guard let output = AVAudioPCMBuffer(pcmFormat: converter.outputFormat, frameCapacity: capacity)
-    else {
-      throw Failure.cannotCreateBuffer
-    }
-
-    var nsError: NSError?
-    let inputOnce = OnceBuffer(buffer)
-    let status = converter.convert(to: output, error: &nsError) { _, statusPtr in
-      if inputOnce.consumed {
-        statusPtr.pointee = .noDataNow
-        return nil
-      }
-      inputOnce.consumed = true
-      statusPtr.pointee = .haveData
-      return inputOnce.buffer
-    }
-    guard status != .error else { throw Failure.conversionFailed }
-    return output
-  }
-}
-
-/// Supplies an AVAudioPCMBuffer to AVAudioConverter exactly once.
-private final class OnceBuffer: @unchecked Sendable {
-  let buffer: AVAudioPCMBuffer
-  var consumed = false
-
-  init(_ buffer: AVAudioPCMBuffer) {
-    self.buffer = buffer
-  }
-}
+extension VoiceDictationController: VoiceDictating {}

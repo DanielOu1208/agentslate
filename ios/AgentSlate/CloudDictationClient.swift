@@ -1,5 +1,13 @@
 import Foundation
 
+enum ProviderResponseLimits {
+  static let httpResponseBodyBytes = 1_048_576
+  static let sonioxFrameBytes = 65_536
+  static let transcriptBytes = 65_536
+  static let sonioxAudioBytes = 16_000 * 2 * 120
+  static let wavAudioBytes = sonioxAudioBytes + 44
+}
+
 struct DictationCredentials: Codable, Equatable, Sendable {
   let openRouterAPIKey: String
   let sonioxAPIKey: String
@@ -42,10 +50,28 @@ enum DictationMode: Equatable, Sendable {
   }
 }
 
+enum DictationDelivery: Equatable, Sendable {
+  case automatic
+  case reviewRequired
+}
+
 struct DictationResult: Equatable, Sendable {
   let rawText: String
   let text: String
   let fallbackNotice: String?
+  let delivery: DictationDelivery
+
+  init(
+    rawText: String,
+    text: String,
+    fallbackNotice: String?,
+    delivery: DictationDelivery = .automatic
+  ) {
+    self.rawText = rawText
+    self.text = text
+    self.fallbackNotice = fallbackNotice
+    self.delivery = delivery
+  }
 }
 
 enum CloudDictationPhase: Sendable {
@@ -71,9 +97,12 @@ func resolveCleanup(rawText: String, cleanedText: String?) -> CleanupResolution 
 }
 
 struct CloudDictationClient: Sendable {
-  enum Failure: LocalizedError {
+  enum Failure: LocalizedError, Equatable {
     case invalidResponse
     case requestFailed(Int)
+    case responseBodyTooLarge
+    case transcriptTooLarge
+    case audioInputTooLarge
     case emptyTranscript
 
     var errorDescription: String? {
@@ -82,6 +111,12 @@ struct CloudDictationClient: Sendable {
         "The dictation provider returned an invalid response."
       case .requestFailed(let status):
         "The dictation provider returned HTTP \(status)."
+      case .responseBodyTooLarge:
+        "The dictation provider response was too large."
+      case .transcriptTooLarge:
+        "The dictation provider transcript was too large."
+      case .audioInputTooLarge:
+        "The dictation recording was too large."
       case .emptyTranscript:
         "No speech was recognized."
       }
@@ -98,26 +133,30 @@ struct CloudDictationClient: Sendable {
   }
 
   func transcribe(audioURL: URL, apiKey: String) async throws -> String {
-    let audioData = try Data(contentsOf: audioURL)
+    let audioData = try loadAudioData(from: audioURL)
     let request = try makeTranscriptionRequest(audioData: audioData, apiKey: apiKey)
-    let (data, response) = try await session.data(for: request)
-    try Self.validate(response)
+    let data = try await responseData(for: request)
     let text = try JSONDecoder().decode(TranscriptionResponse.self, from: data).text
       .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard text.utf8.count <= ProviderResponseLimits.transcriptBytes else {
+      throw Failure.transcriptTooLarge
+    }
     guard !text.isEmpty else { throw Failure.emptyTranscript }
     return text
   }
 
   func cleanup(transcript: String, apiKey: String) async throws -> String {
     let request = try makeCleanupRequest(transcript: transcript, apiKey: apiKey)
-    let (data, response) = try await session.data(for: request)
-    try Self.validate(response)
+    let data = try await responseData(for: request)
     guard
       let text = try JSONDecoder().decode(OpenRouterResponse.self, from: data)
         .choices.first?.message.content.trimmingCharacters(in: .whitespacesAndNewlines),
       !text.isEmpty
     else {
       throw Failure.emptyTranscript
+    }
+    guard text.utf8.count <= ProviderResponseLimits.transcriptBytes else {
+      throw Failure.transcriptTooLarge
     }
     return text
   }
@@ -170,6 +209,43 @@ struct CloudDictationClient: Sendable {
     guard (200..<300).contains(response.statusCode) else {
       throw Failure.requestFailed(response.statusCode)
     }
+  }
+
+  private func responseData(for request: URLRequest) async throws -> Data {
+    let (bytes, response) = try await session.bytes(for: request)
+    do {
+      try Self.validate(response)
+      guard response.expectedContentLength <= ProviderResponseLimits.httpResponseBodyBytes else {
+        throw Failure.responseBodyTooLarge
+      }
+
+      var data = Data()
+      if response.expectedContentLength > 0 {
+        data.reserveCapacity(Int(response.expectedContentLength))
+      }
+      for try await byte in bytes {
+        guard data.count < ProviderResponseLimits.httpResponseBodyBytes else {
+          throw Failure.responseBodyTooLarge
+        }
+        data.append(byte)
+      }
+      return data
+    } catch {
+      bytes.task.cancel()
+      throw error
+    }
+  }
+
+  private func loadAudioData(from url: URL) throws -> Data {
+    let fileSize = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize
+    guard let fileSize, fileSize <= ProviderResponseLimits.wavAudioBytes else {
+      throw Failure.audioInputTooLarge
+    }
+    let data = try Data(contentsOf: url)
+    guard data.count <= ProviderResponseLimits.wavAudioBytes else {
+      throw Failure.audioInputTooLarge
+    }
+    return data
   }
 
   private static let cleanupInstruction = """
