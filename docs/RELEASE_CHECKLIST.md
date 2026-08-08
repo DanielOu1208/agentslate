@@ -1,11 +1,11 @@
 # AgentSlate Release Checklist
 
-## 0.2.0 release candidate
+## 0.2.0 release
 
 - Marketing version: `0.2.0`
 - Build: `5`
 - Minimum Herdr: `0.8.0` (local protocol 19)
-- Status: source and external TestFlight beta publication authorized; execution in progress
+- Status: source and Homebrew release published; external TestFlight beta submitted for Beta App Review
 
 The 0.2 candidate includes Apple on-device dictation, optional OpenRouter-routed Whisper, and Soniox real-time transcription. On August 8, 2026, after the protected-recording fix and manual dictation smoke test, the owner explicitly authorized merging the PR, publishing the source and Homebrew release, and updating the existing external TestFlight beta. Production App Store submission and release remain out of scope.
 
@@ -14,11 +14,13 @@ The 0.2 candidate includes Apple on-device dictation, optional OpenRouter-routed
 - [ ] Confirm live control against Herdr 0.8.0 on the owner's Mac and iPhone.
 - [x] Record the owner's decision to treat the remaining physical matrix as post-release beta validation rather than a publication blocker.
 - [x] Receive explicit owner approval to merge the source PR.
-- [ ] After merge approval, merge the PR and wait for `main` CI before publishing a source release.
+- [x] After merge approval, merge the PR and wait for `main` CI before publishing a source release.
 - [x] Receive explicit owner approval for the TestFlight upload.
-- [ ] After approval, upload `0.2.0 (5)` and update the existing external beta group.
+- [x] After approval, upload `0.2.0 (5)`, add it to the existing `AgentSlate Beta` external group, and submit it only to TestFlight Beta App Review.
 - [x] Receive explicit owner approval for the source and Homebrew release.
-- [ ] Publish the draft `v0.2.0` release, calculate its archive checksum, and update the Homebrew formula and tap.
+- [x] Publish `v0.2.0`, calculate its archive checksum, and update the Homebrew formula and tap.
+
+Publication evidence: PR #1 merged as `57adb031e62b5cfa896194be43f386ee9bdac473`; the public `v0.2.0` tag dereferences to that commit. The published source archive SHA-256 is `029b80d4d3a251a7e3dec990d9915f6dc9727a309b60332b5cf97f33ed57c81c`. Source and tap CI passed, Homebrew installed version 0.2.0 from the public tap, and the restarted service passed `doctor` while listening on the existing Tailscale address.
 
 ## 0.1.0 historical release
 
@@ -68,7 +70,9 @@ Local release gates passed on July 16, 2026: Rust/Swift/iOS tests, static analys
 
 The owner chose to proceed with AgentSlate after reviewing the same-category naming conflict. Formal trademark clearance remains an independent owner responsibility.
 
-## 0.2.0 TestFlight metadata draft
+## 0.2.0 TestFlight metadata
+
+Build `0.2.0 (5)` was uploaded at 4:16 AM PDT on August 8, 2026, validated by App Store Connect, assigned to both `Internal Testers` and the existing `AgentSlate Beta` external group, and submitted only to TestFlight Beta App Review. App Store Connect exposes `Remove from Review`, confirming the submitted state, but does not show a separate textual review-status label. The public link remains `https://testflight.apple.com/join/T1bCGkH6`. Production `0.1.0` remains in Prepare for Submission and was not changed.
 
 ### Beta App Information
 
