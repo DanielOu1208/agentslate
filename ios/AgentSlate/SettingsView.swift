@@ -412,7 +412,7 @@ struct SettingsView: View {
   private var consentMessage: String {
     switch pendingDictationEngine {
     case .openRouter:
-      "Microphone audio will be sent through OpenRouter to Groq-hosted Whisper. "
+      "Microphone audio will be sent through OpenRouter for Whisper transcription. "
         + "When cleanup is enabled, the transcript is sent through OpenRouter to Google. "
         + "Both requests require Zero Data Retention routing."
     case .soniox:

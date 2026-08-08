@@ -6,7 +6,7 @@ permalink: /privacy/
 
 # AgentSlate Privacy Policy
 
-Effective: July 31, 2026
+Effective: August 8, 2026
 
 The AgentSlate developer does not operate an account system, cloud backend, advertising service, analytics service, or tracking service. Optional cloud dictation sends data to OpenRouter or Soniox using API keys that you supply.
 
@@ -27,7 +27,7 @@ Apple Dictation is the default and uses Apple's on-device speech frameworks. In 
 
 Cloud dictation is optional. You choose Apple On-Device, OpenRouter Whisper, or Soniox v5 Real-Time in settings; each cloud engine remains unavailable until you save its API key and consent to sending audio. In cloud modes:
 
-- OpenRouter mode records a temporary audio file and sends it through OpenRouter to Groq-hosted Whisper after you release the microphone;
+- OpenRouter mode records a temporary audio file and sends it through OpenRouter to `openai/whisper-large-v3-turbo` after you release the microphone;
 - Soniox mode streams live audio directly to Soniox and displays provisional and final text while you speak;
 - Soniox says its real-time service does not retain audio or transcripts, but processing is also governed by your Soniox account and its current terms;
 - when **Clean up transcripts** is enabled, the raw cloud transcript is sent through OpenRouter to the selected Google cleanup model; the app requests zero-data-retention routing for that request;

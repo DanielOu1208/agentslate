@@ -66,7 +66,7 @@ Local release gates passed on July 16, 2026: Rust/Swift/iOS tests, static analys
 
 The owner chose to proceed with AgentSlate after reviewing the same-category naming conflict. Formal trademark clearance remains an independent owner responsibility.
 
-## TestFlight metadata
+## 0.2.0 TestFlight metadata draft
 
 ### Beta App Information
 
@@ -90,7 +90,7 @@ The owner chose to proceed with AgentSlate after reviewing the same-category nam
 
   > Please test onboarding and Demo Mode, session and agent selection, control labels and VoiceOver, reconnect behavior, Apple/OpenRouter/Soniox dictation, live Soniox text, cleanup on and off, automatic Apple fallback, Forget Bridge, watched-screen Accept/Deny gating for blocked agents, and that Accept/Deny stay visually available but do nothing when no supported blocked prompt is selected.
 
-### TestFlight steps
+### 0.1.0 TestFlight history
 
 - [x] Rename and reuse the unpublished Herdr Remote Keypad App Store Connect record and its existing bundle ID.
 - [x] Upload verified build `0.1.0 (4)` for external testing.

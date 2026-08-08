@@ -36,7 +36,7 @@ The terminal stays on the Mac. The phone shows agent status and acts as the cont
 - **Direct and private** — connect over Tailscale with a single-use pairing code and a revocable per-device credential.
 - **Offline Demo Mode** — explore the complete keypad with fixed sample agents and no bridge connection.
 
-AgentSlate does not stream terminal output, provide a general shell API, use analytics, or require a cloud account. Optional cloud dictation uses an OpenRouter API key that you supply and stores it in the iOS Keychain. It can still type into a terminal, so treat every key as if you pressed it on the Mac.
+AgentSlate does not stream terminal output, provide a general shell API, use analytics, or require a cloud account. Optional cloud dictation uses provider API keys that you supply—OpenRouter for Whisper and cleanup, and Soniox for real-time transcription—and stores them in the iOS Keychain. It can still type into a terminal, so treat every key as if you pressed it on the Mac.
 
 ## How it works
 
