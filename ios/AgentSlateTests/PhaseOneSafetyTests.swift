@@ -1,4 +1,5 @@
 import AgentSlateClient
+import AVFoundation
 import Foundation
 import Testing
 
@@ -42,7 +43,7 @@ func recordingStorePurgesOnlyOwnedRegularRecordings() throws {
 }
 
 @Test
-func recordingStoreProtectsNewFiles() throws {
+func recordingStoreProtectsPreparedRecorderFiles() throws {
   let fileManager = FileManager.default
   let directory = fileManager.temporaryDirectory
     .appendingPathComponent("AgentSlateRecordingProtectionTests-(UUID().uuidString)")
@@ -51,7 +52,19 @@ func recordingStoreProtectsNewFiles() throws {
 
   let store = DictationRecordingStore(directory: directory, fileManager: fileManager)
   let recording = store.recordingURL(for: .openRouter)
-  try Data("test".utf8).write(to: recording)
+  let recorder = try AVAudioRecorder(
+    url: recording,
+    settings: [
+      AVFormatIDKey: kAudioFormatLinearPCM,
+      AVSampleRateKey: 16_000,
+      AVNumberOfChannelsKey: 1,
+      AVLinearPCMBitDepthKey: 16,
+      AVLinearPCMIsFloatKey: false,
+      AVLinearPCMIsBigEndianKey: false,
+    ])
+  let prepared = recorder.prepareToRecord()
+  #expect(prepared)
+  guard prepared else { return }
   try store.protect(recording)
 
   #if targetEnvironment(simulator)

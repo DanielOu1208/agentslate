@@ -624,16 +624,16 @@ actor VoiceDictationController {
       recordingStore.remove(url)
       throw Failure.audioSetupFailed
     }
+    recorder.isMeteringEnabled = true
+    guard recorder.prepareToRecord() else {
+      recordingStore.remove(url)
+      throw Failure.audioSetupFailed
+    }
     do {
       try recordingStore.protect(url)
     } catch {
       recordingStore.remove(url)
       throw Failure.recordingStorageFailed
-    }
-    recorder.isMeteringEnabled = true
-    guard recorder.prepareToRecord() else {
-      recordingStore.remove(url)
-      throw Failure.audioSetupFailed
     }
     recordingURL = url
     self.recorder = recorder
