@@ -45,7 +45,7 @@ AgentSlate does not stream terminal output, provide a general shell API, use ana
 3. Tapping an agent focuses its existing Herdr pane.
 4. Key presses, approval shortcuts, and dictated text go only to the selected agent.
 
-Voice input defaults to Apple's on-device speech recognition. Settings also offers user-funded OpenRouter Whisper and Soniox v5 Real-Time engines with separate API keys stored in Keychain. Soniox shows provisional text while you speak; both cloud engines can optionally pass the finished transcript through OpenRouter cleanup. If cloud transcription fails, the app retries the temporary recording with Apple's on-device speech framework. If Soniox finalization and Apple fallback both fail after live text arrived, the app retains that latest live transcript instead of discarding it. If cleanup fails or is disabled, it uses the raw transcript.
+Voice input defaults to Apple's on-device speech recognition. Settings also offers user-funded OpenRouter Whisper and Soniox v5 Real-Time engines with separate API keys stored in Keychain. Soniox shows provisional text while you speak; both cloud engines can optionally pass the finished transcript through OpenRouter cleanup. If cloud transcription fails, the app retries the protected temporary recording with Apple's on-device speech framework. If Soniox finalization and Apple fallback both fail after live text arrived, the app puts that latest live transcript in the review editor and never sends it automatically. If cleanup fails or is disabled, it uses the raw transcript.
 
 ## Requirements
 

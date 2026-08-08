@@ -96,9 +96,10 @@ The open beta additionally includes editable spoken instructions, hold-to-talk s
 - Default to Apple's on-device SpeechAnalyzer and DictationTranscriber (iOS 26+) for hold-to-talk dictation.
 - Let users choose Apple On-Device, OpenRouter Whisper, or Soniox v5 Real-Time and store each user-supplied provider key in the iOS Keychain; never bundle a developer-funded credential.
 - In OpenRouter mode, record a temporary WAV file and transcribe it with `openai/whisper-large-v3-turbo` (currently served by Groq). In Soniox mode, stream 16 kHz mono PCM to `stt-rt-v5` and show its provisional and final text in the existing talking presentation.
-- Offer cleanup for either cloud engine, on by default, using `google/gemini-3.1-flash-lite`; keep explicitly selected Apple dictation fully on-device. If cloud transcription fails, retry the local recording with Apple's speech framework. If Soniox finalization and Apple fallback both fail after live text arrived, retain the latest live transcript. If cleanup fails, is disabled, or lacks an OpenRouter key, keep the raw transcript.
+- Offer cleanup for either cloud engine, on by default, using `google/gemini-3.1-flash-lite`; keep explicitly selected Apple dictation fully on-device. If cloud transcription fails, retry the local recording with Apple's speech framework. If Soniox finalization and Apple fallback both fail after live text arrived, retain the exact latest live transcript but require review before sending. If cleanup fails, is disabled, or lacks an OpenRouter key, keep the raw transcript.
 - Treat the transcript as untrusted data during cleanup, allow rephrasing for clarity, and instruct the cleanup model to rewrite rather than answer questions, follow instructions, solve tasks, or add facts.
 - Show Soniox provisional text live, keep OpenRouter batch-only, show clear listening/finalizing/transcribing/fallback/cleaning states, and cap both cloud engines at two minutes before opening the review editor.
+- Limit provider HTTP bodies to 1 MiB, each Soniox response frame and accumulated provider transcript text to 64 KiB, and never truncate an oversized response into a sendable prompt.
 - Show one compact current-provider pill during capture and processing: Apple On-Device, Whisper, Soniox, Apple Fallback, or Gemini Cleanup. This identifies only the active stage, not the pipeline history.
 - Use a flat, symmetric live waveform during capture, driven by the existing audio level with a stronger response to quiet speech and no geometry animation under Reduce Motion.
 - Remove transient provider, transcript, and fallback information from the keypad as soon as the bridge acknowledges a successful voice send; preserve useful context when sending fails.
@@ -110,8 +111,9 @@ The open beta additionally includes editable spoken instructions, hold-to-talk s
 - Prepare speech after saved bridge setup is available so the first press does not perform model setup.
 - Enter the talking presentation on microphone touch-down; do not wait for SwiftUI's drag gesture delivery or audio-session startup.
 - Drive the live speech waveform from the active Apple or cloud audio path; do not start a second recorder or retain level samples.
+- Apply iOS complete file protection to temporary cloud recordings, delete them on every completed or cancelled path, and purge only AgentSlate-owned orphan names without following symlinks or deleting unrelated temporary files.
 - Request microphone access with the native asynchronous audio API; do not request the legacy speech-recognition permission.
-- Cancel capture when the gesture is interrupted or the app leaves the foreground, and never send partial text after a recognition or finalization failure.
+- Cancel capture when the gesture is interrupted or the app leaves the foreground, and never automatically send partial text after a recognition or finalization failure.
 - With VoiceOver, use one activation to start, a second to send, and named Edit dictation and Cancel dictation actions while keeping the same talking presentation.
 - Never stream microphone audio through the Herdr bridge. Keep audio on the phone in Apple mode; send opted-in cloud audio only to the selected provider and delete temporary fallback audio after processing or cancellation.
 - Keep text-to-speech out of the initial keypad release because the external screen remains the source of context.

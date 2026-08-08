@@ -32,8 +32,11 @@ Cloud dictation is optional. You choose Apple On-Device, OpenRouter Whisper, or 
 - Soniox says its real-time service does not retain audio or transcripts, but processing is also governed by your Soniox account and its current terms;
 - when **Clean up transcripts** is enabled, the raw cloud transcript is sent through OpenRouter to the selected Google cleanup model; the app requests zero-data-retention routing for that request;
 - if either cloud engine fails, the app retries locally with Apple's speech framework;
+- if both Soniox finalization and Apple fallback fail after live text arrived, the app requires you to review that text before it can be sent;
 - if cleanup fails or is disabled, the raw transcript is used; and
-- the local fallback recording is deleted after processing or cancellation.
+- local fallback recordings use iOS complete file protection, are deleted after processing or cancellation, and narrowly named orphaned recordings are removed before the next dictation session.
+
+Provider responses and transcripts are bounded locally: HTTP response bodies are limited to 1 MiB, individual Soniox response frames and accumulated provider transcript text to 64 KiB, and cloud audio to two minutes. The final text sent to the paired Mac remains limited to 8,192 UTF-8 bytes.
 
 When Apple On-Device is selected directly, cleanup is unavailable and neither audio nor transcript text is sent to OpenRouter or Soniox.
 
