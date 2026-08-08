@@ -4,6 +4,8 @@ Protocol v3 is the device-paired, session-aware keypad contract shared by the Ru
 
 Protocol v1 and v2 clients are incompatible with v3.
 
+The bridge protocol is independent from Herdr's local socket protocol. AgentSlate 0.2 requires Herdr 0.8.0 or newer and rejects snapshots reporting a Herdr protocol older than 19.
+
 ## Transport and envelope
 
 The client opens a persistent TCP connection over Tailscale. Each UTF-8 JSON object occupies one line, with a maximum encoded size of 65,536 bytes.
@@ -104,6 +106,7 @@ Send an allowlisted key:
 ```
 
 Allowed key names are `arrow_up`, `arrow_down`, `arrow_left`, `arrow_right`, `enter`, `escape`, `tab`, `shift_tab`, and `space`.
+The `shift_tab` wire name remains stable, but the bridge emits literal terminal text through Herdr's `pane.send_text` endpoint. Codex and unrecognized agent kinds receive the terminal-standard BackTab sequence (`Esc [ Z`). OMP receives the enhanced-keyboard Shift+Tab sequence (`Esc [ 9 ; 2 u`) because its active keyboard-enhancement mode does not recognize legacy BackTab. Live testing verified both routes with Codex and OMP respectively; other agent kinds retain the portable terminal-standard fallback.
 
 Send a watched-screen Accept or Deny shortcut:
 
@@ -135,8 +138,8 @@ Agent snapshots identify their session:
   "event_id":2,
   "type":"agent_snapshot",
   "session":"default",
-  "herdr_protocol":16,
-  "herdr_version":"0.7.4",
+  "herdr_protocol":19,
+  "herdr_version":"0.8.0",
   "agents":[{
     "id":"w1:p1",
     "kind":"codex",
@@ -173,6 +176,9 @@ Errors use `{"version":3,"id":"5","type":"error","code":"agent_not_found","messa
 - `session_not_found`
 - `agent_not_found`
 - `herdr_unavailable`
+- `unsupported_herdr_version`
 - `internal_error`
+
+An incompatibility discovered by background monitoring is an unsolicited error event with `event_id` instead of a request `id`, plus the affected `session`. For example, a running Herdr older than 0.8.0 produces `unsupported_herdr_version` and an actionable upgrade message before that session is marked unavailable.
 
 Clients branch on `code`, not diagnostic messages. They cache agents and availability by session, clear the selected agent when sessions change, and fall back to the running default or first session when the current session closes. Request timeout remains five seconds; transport reconnection remains 0.5, 1, 2, 4, then 5 seconds capped. A revoked or rejected device does not reconnect until it pairs again.

@@ -37,6 +37,13 @@ struct MonitorAuthorization {
     revocation: Arc<Notify>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum HerdrMonitorState {
+    Connected,
+    Unavailable,
+    UnsupportedVersion,
+}
+
 impl SessionSource {
     fn sessions(&self) -> Result<Vec<HerdrSession>, String> {
         match self {
@@ -399,7 +406,20 @@ async fn handle_connection(
                     }
                 };
                 match current_agent(&herdr, &agent_id).await {
-                    Ok(_) => match herdr.send_key(&agent_id, key).await {
+                    Ok(snapshot) => match if key == "shift+tab" {
+                        let agent = snapshot
+                            .agents
+                            .iter()
+                            .find(|agent| agent.pane_id == agent_id)
+                            .expect(
+                                "current_agent returned a snapshot without the requested agent",
+                            );
+                        herdr
+                            .send_shift_tab(&agent_id, agent.agent.as_deref().unwrap())
+                            .await
+                    } else {
+                        herdr.send_key(&agent_id, key).await
+                    } {
                         Ok(()) => {
                             send(&outgoing, response(&id, "input_acknowledged", json!({}))).await?
                         }
@@ -464,12 +484,12 @@ async fn handle_connection(
                         let agent = snapshot
                             .agents
                             .iter()
-                            .find(|agent| agent.pane_id == agent_id)
+                            .find(|agent| agent.pane_id == agent_id && agent.agent.is_some())
                             .expect(
                                 "current_agent returned a snapshot without the requested agent",
                             );
                         let keys = if agent.agent_status == "blocked" {
-                            remote_action_keys(&agent.agent, action)
+                            remote_action_keys(agent.agent.as_deref().unwrap(), action)
                         } else {
                             None
                         };
@@ -549,7 +569,7 @@ async fn monitor_sessions(
     authorization: MonitorAuthorization,
 ) {
     let mut previous_sessions = None;
-    let mut connected = HashMap::<String, bool>::new();
+    let mut states = HashMap::<String, HerdrMonitorState>::new();
     let mut previous_agents = HashMap::<String, Vec<Agent>>::new();
     let mut next_discovery = Instant::now();
 
@@ -599,14 +619,14 @@ async fn monitor_sessions(
             .iter()
             .map(|session| session.name.as_str())
             .collect::<Vec<_>>();
-        connected.retain(|name, _| current_names.contains(&name.as_str()));
+        states.retain(|name, _| current_names.contains(&name.as_str()));
         previous_agents.retain(|name, _| current_names.contains(&name.as_str()));
 
         for session in current_sessions {
             let herdr = HerdrClient::new(session.socket_path);
             match herdr.snapshot().await {
                 Ok(snapshot) => {
-                    if connected.get(&session.name) != Some(&true) {
+                    if states.get(&session.name) != Some(&HerdrMonitorState::Connected) {
                         if send_event(
                             &outgoing,
                             &events,
@@ -618,7 +638,7 @@ async fn monitor_sessions(
                         {
                             return;
                         }
-                        connected.insert(session.name.clone(), true);
+                        states.insert(session.name.clone(), HerdrMonitorState::Connected);
                     }
                     let agents = snapshot.normalized_agents();
                     if previous_agents.get(&session.name) != Some(&agents) {
@@ -637,8 +657,29 @@ async fn monitor_sessions(
                     }
                 }
                 Err(error) => {
-                    eprintln!("Herdr session '{}' unavailable: {error}", session.name);
-                    if connected.get(&session.name) != Some(&false) {
+                    let state = if matches!(&error, HerdrError::UnsupportedVersion { .. }) {
+                        HerdrMonitorState::UnsupportedVersion
+                    } else {
+                        HerdrMonitorState::Unavailable
+                    };
+                    if states.get(&session.name) != Some(&state) {
+                        eprintln!("Herdr session '{}' unavailable: {error}", session.name);
+                        if state == HerdrMonitorState::UnsupportedVersion
+                            && send_event(
+                                &outgoing,
+                                &events,
+                                "error",
+                                json!({
+                                    "session": session.name,
+                                    "code": "unsupported_herdr_version",
+                                    "message": "Herdr 0.8.0 or newer is required on the connected Mac"
+                                }),
+                            )
+                            .await
+                            .is_err()
+                        {
+                            return;
+                        }
                         if send_event(
                             &outgoing,
                             &events,
@@ -650,7 +691,7 @@ async fn monitor_sessions(
                         {
                             return;
                         }
-                        connected.insert(session.name.clone(), false);
+                        states.insert(session.name.clone(), state);
                         previous_agents.remove(&session.name);
                     }
                 }
@@ -752,6 +793,10 @@ async fn send_herdr_error(
             "herdr_unavailable".into(),
             "Herdr is currently unavailable".into(),
         ),
+        HerdrError::UnsupportedVersion { .. } => (
+            "unsupported_herdr_version".into(),
+            "Herdr 0.8.0 or newer is required on the connected Mac".into(),
+        ),
         _ => {
             eprintln!("Herdr request failed; details withheld");
             ("internal_error".into(), "Herdr request failed".into())
@@ -831,8 +876,8 @@ mod tests {
                     "result": {
                         "type": "session_snapshot",
                         "snapshot": {
-                            "protocol": 16,
-                            "version": "0.7.4",
+                            "protocol": 19,
+                            "version": "0.8.0",
                             "agents": [
                                 {
                                     "pane_id": "w1:p1",
@@ -857,6 +902,12 @@ mod tests {
                                     "agent": "opencode",
                                     "agent_status": "blocked",
                                     "workspace_id": "w1"
+                                },
+                                {
+                                    "pane_id": "w1:p5",
+                                    "agent": "omp",
+                                    "agent_status": "blocked",
+                                    "workspace_id": "w1"
                                 }
                             ],
                             "workspaces": [{"workspace_id": "w1", "label": "demo"}]
@@ -864,7 +915,7 @@ mod tests {
                     }
                 }),
                 "pane.focus" => json!({"id": request["id"], "result": {"type": "pane_focused"}}),
-                "pane.send_keys" | "pane.send_input" => {
+                "pane.send_keys" | "pane.send_input" | "pane.send_text" => {
                     json!({"id": request["id"], "result": {"type": "input_sent"}})
                 }
                 method => json!({
@@ -875,6 +926,34 @@ mod tests {
                     }
                 }),
             };
+            let mut stream = reader.into_inner();
+            let mut bytes = serde_json::to_vec(&response).unwrap();
+            bytes.push(b'\n');
+            stream.write_all(&bytes).await.unwrap();
+        }
+    }
+
+    async fn run_fake_old_herdr(listener: UnixListener) {
+        loop {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut reader = BufReader::new(stream);
+            let line = read_frame(&mut reader, MAX_HERDR_LINE_BYTES)
+                .await
+                .unwrap()
+                .unwrap();
+            let request: Value = serde_json::from_str(&line).unwrap();
+            let response = json!({
+                "id": request["id"],
+                "result": {
+                    "type": "session_snapshot",
+                    "snapshot": {
+                        "protocol": 17,
+                        "version": "0.7.5",
+                        "agents": [],
+                        "workspaces": []
+                    }
+                }
+            });
             let mut stream = reader.into_inner();
             let mut bytes = serde_json::to_vec(&response).unwrap();
             bytes.push(b'\n');
@@ -911,6 +990,111 @@ mod tests {
         ] {
             assert!(validate_listen_address(address.parse().unwrap()).is_err());
         }
+    }
+
+    #[tokio::test]
+    async fn maps_unsupported_herdr_version_for_phone_clients() {
+        let (outgoing, mut receiver) = mpsc::channel(1);
+        send_herdr_error(
+            &outgoing,
+            "snapshot",
+            HerdrError::UnsupportedVersion {
+                version: "0.7.5".into(),
+                protocol: 17,
+            },
+        )
+        .await
+        .unwrap();
+
+        let response = receiver.recv().await.unwrap();
+        assert_eq!(response["code"], "unsupported_herdr_version");
+        assert_eq!(
+            response["message"],
+            "Herdr 0.8.0 or newer is required on the connected Mac"
+        );
+        assert_eq!(response["version"], PROTOCOL_VERSION);
+    }
+
+    #[tokio::test]
+    async fn reports_unsupported_herdr_version_after_authentication() {
+        let socket = std::env::temp_dir().join(format!(
+            "agentslate-old-herdr-test-{}-{}.sock",
+            std::process::id(),
+            TEST_ID.fetch_add(1, Ordering::Relaxed)
+        ));
+        let herdr_listener = UnixListener::bind(&socket).unwrap();
+        let fake_herdr = tokio::spawn(run_fake_old_herdr(herdr_listener));
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let state_dir = std::env::temp_dir().join(format!(
+            "agentslate-old-herdr-device-test-{}-{}",
+            std::process::id(),
+            TEST_ID.fetch_add(1, Ordering::Relaxed)
+        ));
+        let store = DeviceStore::new(state_dir.clone());
+        let pairing_code = store.create_pairing().unwrap();
+        let device = store.pair(&pairing_code, "Test iPhone").unwrap();
+        let devices = Arc::new(Mutex::new(store));
+        let source = Arc::new(SessionSource::Fixed(vec![HerdrSession::new(
+            "default",
+            true,
+            socket.clone(),
+        )]));
+        let bridge = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let _ = handle_connection(stream, source, devices).await;
+        });
+
+        let stream = TcpStream::connect(address).await.unwrap();
+        let (read_half, mut write_half) = stream.into_split();
+        let mut reader = BufReader::new(read_half);
+        write_client(
+            &mut write_half,
+            json!({
+                "version": PROTOCOL_VERSION,
+                "id": "auth",
+                "type": "authenticate",
+                "device_id": device.device_id,
+                "credential": device.credential
+            }),
+        )
+        .await;
+        assert_eq!(
+            read_for_id(&mut reader, "auth").await["type"],
+            "authenticated"
+        );
+
+        let error = read_for_type(&mut reader, "error").await;
+        assert_eq!(error["code"], "unsupported_herdr_version");
+        assert_eq!(
+            error["message"],
+            "Herdr 0.8.0 or newer is required on the connected Mac"
+        );
+        assert_eq!(error["session"], "default");
+        assert!(error.get("event_id").is_some());
+        assert!(error.get("id").is_none());
+
+        let state = read_for_type(&mut reader, "herdr_state").await;
+        assert_eq!(state["session"], "default");
+        assert_eq!(state["state"], "unavailable");
+        assert!(
+            timeout(
+                Duration::from_millis(450),
+                read_frame(&mut reader, MAX_CLIENT_LINE_BYTES)
+            )
+            .await
+            .is_err()
+        );
+
+        drop(write_half);
+        drop(reader);
+        bridge.abort();
+        fake_herdr.abort();
+        let _ = bridge.await;
+        let _ = fake_herdr.await;
+        std::fs::remove_file(socket).unwrap();
+        std::fs::remove_dir_all(state_dir).unwrap();
     }
 
     #[tokio::test]
@@ -1183,6 +1367,57 @@ mod tests {
             &mut write_half,
             json!({
                 "version": PROTOCOL_VERSION,
+                "id": "opencode-shift-tab",
+                "type": "send_key",
+                "session": "default",
+                "agent_id": "w1:p4",
+                "key": "shift_tab"
+            }),
+        )
+        .await;
+        assert_eq!(
+            read_for_id(&mut reader, "opencode-shift-tab").await["type"],
+            "input_acknowledged"
+        );
+
+        write_client(
+            &mut write_half,
+            json!({
+                "version": PROTOCOL_VERSION,
+                "id": "omp-shift-tab",
+                "type": "send_key",
+                "session": "default",
+                "agent_id": "w1:p5",
+                "key": "shift_tab"
+            }),
+        )
+        .await;
+        assert_eq!(
+            read_for_id(&mut reader, "omp-shift-tab").await["type"],
+            "input_acknowledged"
+        );
+
+        write_client(
+            &mut write_half,
+            json!({
+                "version": PROTOCOL_VERSION,
+                "id": "custom-shift-tab",
+                "type": "send_key",
+                "session": "default",
+                "agent_id": "w1:p3",
+                "key": "shift_tab"
+            }),
+        )
+        .await;
+        assert_eq!(
+            read_for_id(&mut reader, "custom-shift-tab").await["type"],
+            "input_acknowledged"
+        );
+
+        write_client(
+            &mut write_half,
+            json!({
+                "version": PROTOCOL_VERSION,
                 "id": "accept",
                 "type": "send_action",
                 "session": "default",
@@ -1261,9 +1496,26 @@ mod tests {
             request["method"] == "pane.send_keys"
                 && request["params"] == json!({"pane_id": "w1:p1", "keys": ["down"]})
         }));
+        for pane_id in ["w1:p1", "w1:p3", "w1:p4"] {
+            assert!(requests.iter().any(|request| {
+                request["method"] == "pane.send_text"
+                    && request["params"] == json!({"pane_id": pane_id, "text": "\u{1b}[Z"})
+            }));
+        }
         assert!(requests.iter().any(|request| {
+            request["method"] == "pane.send_text"
+                && request["params"] == json!({"pane_id": "w1:p5", "text": "\u{1b}[9;2u"})
+        }));
+        assert!(!requests.iter().any(|request| {
             request["method"] == "pane.send_keys"
-                && request["params"] == json!({"pane_id": "w1:p1", "keys": ["shift+tab"]})
+                && request["params"]["keys"] == json!(["shift+tab"])
+        }));
+        assert!(!requests.iter().any(|request| {
+            request["method"] == "pane.send_input"
+                && matches!(
+                    request["params"]["text"].as_str(),
+                    Some("\u{1b}[Z" | "\u{1b}[9;2u")
+                )
         }));
         assert!(requests.iter().any(|request| {
             request["method"] == "pane.send_keys"
@@ -1290,7 +1542,13 @@ mod tests {
         }));
         assert!(requests.iter().all(|request| matches!(
             request["method"].as_str(),
-            Some("session.snapshot" | "pane.focus" | "pane.send_keys" | "pane.send_input")
+            Some(
+                "session.snapshot"
+                    | "pane.focus"
+                    | "pane.send_keys"
+                    | "pane.send_input"
+                    | "pane.send_text"
+            )
         )));
         drop(requests);
 

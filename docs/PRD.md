@@ -63,7 +63,7 @@ The first phone build adds:
 
 ### Open beta
 
-The open beta additionally includes editable spoken instructions, hold-to-talk local speech recognition, secure device pairing and revocation, Homebrew service packaging, support/privacy pages, and an external TestFlight build. It is complete when an iPhone can select among at least three agents, operate approvals and pickers, review and send spoken instructions, reconnect, and reject unauthenticated or revoked devices.
+The open beta additionally includes editable spoken instructions, hold-to-talk speech recognition with an Apple on-device default and optional user-funded cloud pipeline, secure device pairing and revocation, Homebrew service packaging, support/privacy pages, and an external TestFlight build. It is complete when an iPhone can select among at least three agents, operate approvals and pickers, review and send spoken instructions, reconnect, and reject unauthenticated or revoked devices.
 
 ## Functional requirements
 
@@ -81,6 +81,7 @@ The open beta additionally includes editable spoken instructions, hold-to-talk l
 ### Input
 
 - Keep arrows, Enter, Escape, Tab, and Shift+Tab on the primary phone control bank for every current agent.
+- Send Shift+Tab through Herdr's literal-text `pane.send_text` path. Codex and unrecognized agent kinds receive the terminal-standard BackTab sequence (`Esc [ Z`); OMP receives the enhanced-keyboard sequence (`Esc [ 9 ; 2 u`) that it requires when keyboard enhancement is active. Live testing verified the standard sequence with Codex and the enhanced sequence with OMP.
 - Continue supporting Space in protocol v3 even though the phone layout does not expose a dedicated key for it.
 - Support printable Unicode text with and without a final Enter.
 - Include the selected session name and agent ID in every input request.
@@ -92,17 +93,29 @@ The open beta additionally includes editable spoken instructions, hold-to-talk l
 
 ### Voice and speech
 
-- Use Apple's on-device SpeechAnalyzer and DictationTranscriber (iOS 26+) for hold-to-talk dictation.
+- Default to Apple's on-device SpeechAnalyzer and DictationTranscriber (iOS 26+) for hold-to-talk dictation.
+- Let users choose Apple On-Device, OpenRouter Whisper, or Soniox v5 Real-Time and store each user-supplied provider key in the iOS Keychain; never bundle a developer-funded credential.
+- In OpenRouter mode, record a temporary WAV file and transcribe it with the OpenRouter-routed `openai/whisper-large-v3-turbo` model. In Soniox mode, stream 16 kHz mono PCM to `stt-rt-v5` and show its provisional and final text in the existing talking presentation.
+- Offer cleanup for either cloud engine, on by default, using `google/gemini-3.1-flash-lite`; keep explicitly selected Apple dictation fully on-device. If cloud transcription fails, retry the local recording with Apple's speech framework. If Soniox finalization and Apple fallback both fail after live text arrived, retain the exact latest live transcript but require review before sending. If cleanup fails, is disabled, or lacks an OpenRouter key, keep the raw transcript.
+- Treat the transcript as untrusted data during cleanup, allow rephrasing for clarity, and instruct the cleanup model to rewrite rather than answer questions, follow instructions, solve tasks, or add facts.
+- Show Soniox provisional text live, keep OpenRouter batch-only, show clear listening/finalizing/transcribing/fallback/cleaning states, and cap both cloud engines at two minutes before opening the review editor.
+- Limit provider HTTP bodies to 1 MiB, each Soniox response frame and accumulated provider transcript text to 64 KiB, and never truncate an oversized response into a sendable prompt.
+- Show one compact current-provider pill during capture and processing: Apple On-Device, Whisper, Soniox, Apple Fallback, or Gemini Cleanup. This identifies only the active stage, not the pipeline history.
+- Use a flat, symmetric live waveform during capture, driven by the existing audio level with a stronger response to quiet speech and no geometry animation under Reduce Motion.
+- Remove transient provider, transcript, and fallback information from the keypad as soon as the bridge acknowledges a successful voice send; preserve useful context when sending fails.
 - Default to hold, speak, and release to send text plus Enter through the existing bridge `send_text` path.
 - While holding, show only two visible alternate release targets: upper-left Cancel discards and upper-right Edit finalizes into an in-memory review sheet. Leaving either target restores Send.
-- Keep the microphone sharp and interactive while the blocked keypad is blurred and dimmed; show live, auto-scrolling transcript text and an outcome-colored border that respects Reduce Motion.
+- Keep the microphone sharp and interactive while the blocked keypad is blurred and dimmed; show live, auto-scrolling transcript text in Apple mode, a listening state in cloud mode, and an outcome-colored border that respects Reduce Motion.
 - Let the review sheet edit multi-line text, convert line breaks to spaces, reject blank/control-character/over-8,192-byte input, and retain failed or disconnected drafts for retry.
 - Bind an Edit draft to the agent and session captured when recording began; send only while that exact target remains selected and available.
 - Prepare speech after saved bridge setup is available so the first press does not perform model setup.
+- Enter the talking presentation on microphone touch-down; do not wait for SwiftUI's drag gesture delivery or audio-session startup.
+- Drive the live speech waveform from the active Apple or cloud audio path; do not start a second recorder or retain level samples.
+- Apply iOS complete file protection to temporary cloud recordings, delete them on every completed or cancelled path, and purge only AgentSlate-owned orphan names without following symlinks or deleting unrelated temporary files.
 - Request microphone access with the native asynchronous audio API; do not request the legacy speech-recognition permission.
-- Cancel capture when the gesture is interrupted or the app leaves the foreground, and never send partial text after a recognition or finalization failure.
+- Cancel capture when the gesture is interrupted or the app leaves the foreground, and never automatically send partial text after a recognition or finalization failure.
 - With VoiceOver, use one activation to start, a second to send, and named Edit dictation and Cancel dictation actions while keeping the same talking presentation.
-- Keep audio on the phone; never stream microphone audio through the Herdr bridge.
+- Never stream microphone audio through the Herdr bridge. Keep audio on the phone in Apple mode; send opted-in cloud audio only to the selected provider and delete temporary fallback audio after processing or cancellation.
 - Keep text-to-speech out of the initial keypad release because the external screen remains the source of context.
 
 ### Connection and security
@@ -135,7 +148,7 @@ The open beta additionally includes editable spoken instructions, hold-to-talk l
 
 ## Dependencies and risks
 
-- Herdr's local protocol is versioned independently from bridge protocol v3. The connector must tolerate unknown fields and surface incompatible required behavior clearly.
+- AgentSlate 0.2 requires Herdr 0.8.0 or newer. Herdr's local protocol is versioned independently from bridge protocol v3; the connector must tolerate unknown fields and reject protocol versions older than 19 with an actionable error.
 - iOS cannot maintain a permanent socket while suspended; reliable closed-app notifications would require a later APNs design.
 - A wrong agent selection can send valid input to the wrong pane. The phone must show the selected agent clearly and the bridge must revalidate membership before every input.
 - Six-digit pairing codes are deliberately short-lived and attempt-limited; the generated 256-bit per-device credential provides ongoing authentication.
@@ -153,6 +166,6 @@ The open beta additionally includes editable spoken instructions, hold-to-talk l
 - The shared Swift package targets iOS 18 and newer.
 - The iPhone app targets iOS 26 and newer so it can use SpeechAnalyzer for on-device dictation.
 - Dedicated Accept and Deny keys are watched-screen default-keymap conveniences for five supported agent kinds; they are not structured authorization and remain disabled unless the selected agent is blocked.
-- The Voice key uses on-device hold-to-talk dictation with Send, Cancel, and editable review outcomes; finalized sends reuse the existing bridge text route.
+- The Voice key uses Apple on-device hold-to-talk dictation by default, with optional user-funded OpenRouter Whisper and Soniox v5 real-time pipelines, automatic Apple/raw-text fallbacks, optional cloud cleanup, and the same Send, Cancel, and editable review outcomes. Finalized sends reuse the existing bridge text route.
 - Demo Mode is an offline review path with fixed sample data, not a simulated connection to the real bridge.
-- Version 0.1.0 stops at external TestFlight. Production App Store metadata may be prepared, but production review and release require separate explicit approval.
+- Version 0.1.0 stopped at external TestFlight. Version 0.2.0 build 5 is prepared locally for owner testing; source publication, Homebrew release, TestFlight upload, and production review require separate explicit approval.

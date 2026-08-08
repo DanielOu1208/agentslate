@@ -32,11 +32,11 @@ The terminal stays on the Mac. The phone shows agent status and acts as the cont
 - **Live agent dashboard** — see Herdr sessions, workspaces, and agent states, with blocked agents brought forward.
 - **Focused remote controls** — send arrows, Enter, Escape, Tab, Shift+Tab, Space, or short text to the selected agent.
 - **Watched-screen actions** — use Accept and Deny shortcuts only when a supported agent is visibly blocked.
-- **Private voice input** — Apple's on-device transcription runs on the iPhone; only the resulting text is sent.
+- **Choose your voice pipeline** — use Apple's on-device transcription by default, OpenRouter-routed Whisper for recorded speech, or Soniox v5 for live transcription, with optional cleanup and automatic Apple fallback.
 - **Direct and private** — connect over Tailscale with a single-use pairing code and a revocable per-device credential.
 - **Offline Demo Mode** — explore the complete keypad with fixed sample agents and no bridge connection.
 
-AgentSlate does not stream terminal output, provide a general shell API, use analytics, or require a cloud account. It can still type into a terminal, so treat every key as if you pressed it on the Mac.
+AgentSlate does not stream terminal output, provide a general shell API, use analytics, or require a cloud account. Optional cloud dictation uses provider API keys that you supply—OpenRouter for Whisper and cleanup, and Soniox for real-time transcription—and stores them in the iOS Keychain. It can still type into a terminal, so treat every key as if you pressed it on the Mac.
 
 ## How it works
 
@@ -44,6 +44,8 @@ AgentSlate does not stream terminal output, provide a general shell API, use ana
 2. The iPhone pairs directly with the bridge over your private Tailscale network.
 3. Tapping an agent focuses its existing Herdr pane.
 4. Key presses, approval shortcuts, and dictated text go only to the selected agent.
+
+Voice input defaults to Apple's on-device speech recognition. Settings also offers user-funded OpenRouter Whisper and Soniox v5 Real-Time engines with separate API keys stored in Keychain. Soniox shows provisional text while you speak; both cloud engines can optionally pass the finished transcript through OpenRouter cleanup. If cloud transcription fails, the app retries the protected temporary recording with Apple's on-device speech framework. If Soniox finalization and Apple fallback both fail after live text arrived, the app puts that latest live transcript in the review editor and never sends it automatically. If cleanup fails or is disabled, it uses the raw transcript.
 
 ## Requirements
 
@@ -56,8 +58,11 @@ To build and explore AgentSlate:
 
 For live Herdr control, you also need:
 
-- Herdr 0.7.4 or newer on the Mac
+- Herdr 0.8.0 or newer on the Mac
 - Tailscale on the Mac and iPhone, signed into the same private network
+
+To update an older Herdr installation while preserving running sessions, run
+`herdr update --handoff` from a terminal outside Herdr.
 
 ## Try it
 
@@ -144,6 +149,7 @@ Public support belongs in [GitHub Issues](https://github.com/DanielOu1208/agents
 
 ## Project documents
 
+- [AgentSlate 0.2.0 release notes](RELEASE_NOTES_0.2.0.md)
 - [Product requirements](docs/PRD.md)
 - [Protocol v3](docs/PROTOCOL.md)
 - [Implementation tracker](docs/IMPLEMENTATION_TRACKER.md)

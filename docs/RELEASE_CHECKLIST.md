@@ -1,12 +1,36 @@
-# AgentSlate 0.1.0 Release Checklist
+# AgentSlate Release Checklist
+
+## 0.2.0 release candidate
+
+- Marketing version: `0.2.0`
+- Build: `5`
+- Minimum Herdr: `0.8.0` (local protocol 19)
+- Status: source and external TestFlight beta publication authorized; execution in progress
+
+The 0.2 candidate includes Apple on-device dictation, optional OpenRouter-routed Whisper, and Soniox real-time transcription. On August 8, 2026, after the protected-recording fix and manual dictation smoke test, the owner explicitly authorized merging the PR, publishing the source and Homebrew release, and updating the existing external TestFlight beta. Production App Store submission and release remain out of scope.
+
+- [x] Owner manually smoke-tested dictation after the protected Whisper recording fix and reported it working well.
+- [ ] Complete the remaining fallback, interruption, two-minute cutoff, haptic, and latency acceptance matrix.
+- [ ] Confirm live control against Herdr 0.8.0 on the owner's Mac and iPhone.
+- [x] Record the owner's decision to treat the remaining physical matrix as post-release beta validation rather than a publication blocker.
+- [x] Receive explicit owner approval to merge the source PR.
+- [ ] After merge approval, merge the PR and wait for `main` CI before publishing a source release.
+- [x] Receive explicit owner approval for the TestFlight upload.
+- [ ] After approval, upload `0.2.0 (5)` and update the existing external beta group.
+- [x] Receive explicit owner approval for the source and Homebrew release.
+- [ ] Publish the draft `v0.2.0` release, calculate its archive checksum, and update the Homebrew formula and tap.
+
+## 0.1.0 historical release
 
 The project owner has authorized preparation and publication of the open-source repository, Homebrew release, and external TestFlight beta. Production App Store submission and release remain explicitly out of scope.
+
+The earlier restriction on uploading the optional cloud-dictation work was superseded by the owner's August 8, 2026 approval for the 0.2 external TestFlight beta.
 
 ## Release identity
 
 - Product and App Store name: `AgentSlate`
 - Subtitle: `Remote control for Herdr`
-- Version: `0.1.0`
+- Version: `0.2.0`
 - Bundle ID: `com.danielou.HerdrRemoteKeypad` (retained internally to reuse the unpublished App Store Connect record)
 - Repository: `DanielOu1208/agentslate`
 - Homebrew tap: `DanielOu1208/homebrew-agentslate`
@@ -44,13 +68,13 @@ Local release gates passed on July 16, 2026: Rust/Swift/iOS tests, static analys
 
 The owner chose to proceed with AgentSlate after reviewing the same-category naming conflict. Formal trademark clearance remains an independent owner responsibility.
 
-## TestFlight metadata
+## 0.2.0 TestFlight metadata draft
 
 ### Beta App Information
 
 - Beta app description:
 
-  > AgentSlate is an iPhone remote control for coding agents running in Herdr on your Mac. Pair over Tailscale, select a visible agent, and send common keys, short text, or on-device dictation. This beta includes an offline Demo Mode.
+  > AgentSlate is an iPhone remote control for coding agents running in Herdr on your Mac. Pair over Tailscale, select a visible agent, and send common keys, short text, or voice dictation. Apple on-device dictation is the default; optional cloud engines use OpenRouter or Soniox keys supplied by the tester. This beta includes an offline Demo Mode.
 
 - Feedback email: temporarily use the email attached to the Apple developer account.
 - Privacy policy URL: `https://danielou1208.github.io/agentslate/privacy/`
@@ -62,13 +86,13 @@ The owner chose to proceed with AgentSlate after reviewing the same-category nam
 - Sign-in required: No.
 - Review notes:
 
-  > AgentSlate normally connects to a Mac running Herdr over Tailscale. No account is required. For review without a Mac, open Demo Mode from onboarding; Demo Mode uses fixed sample agents and never makes a network connection. To test a real bridge, install the linked Homebrew formula on a Mac with Herdr and Tailscale, run `brew services start agentslate`, then run `agentslate pair` and enter the Mac's Tailscale address and six-digit code in the app. Microphone permission is used only for on-device dictation.
+  > AgentSlate normally connects to a Mac running Herdr over Tailscale. No AgentSlate account is required. For review without a Mac, open Demo Mode from onboarding; Demo Mode uses fixed sample agents and never makes a bridge connection. To test a real bridge, install the linked Homebrew formula on a Mac with Herdr and Tailscale, run `brew services start agentslate`, then run `agentslate pair` and enter the Mac's Tailscale address and six-digit code in the app. Microphone permission supports Apple on-device dictation by default. Optional OpenRouter Whisper and Soniox v5 Real-Time engines require tester-supplied API keys and explicit consent.
 
 - What to test:
 
-  > Please test onboarding and Demo Mode, session and agent selection, control labels and VoiceOver, reconnect behavior, on-device dictation, Forget Bridge, watched-screen Accept/Deny gating for blocked agents, and that Accept/Deny stay visually available but do nothing when no supported blocked prompt is selected.
+  > Please test onboarding and Demo Mode, session and agent selection, control labels and VoiceOver, reconnect behavior, Apple/OpenRouter/Soniox dictation, live Soniox text, cleanup on and off, automatic Apple fallback, Forget Bridge, watched-screen Accept/Deny gating for blocked agents, and that Accept/Deny stay visually available but do nothing when no supported blocked prompt is selected.
 
-### TestFlight steps
+### 0.1.0 TestFlight history
 
 - [x] Rename and reuse the unpublished Herdr Remote Keypad App Store Connect record and its existing bundle ID.
 - [x] Upload verified build `0.1.0 (4)` for external testing.
@@ -78,11 +102,11 @@ The owner chose to proceed with AgentSlate after reviewing the same-category nam
 - [x] Create the `AgentSlate Beta` external testing group.
 - [x] Create a public link open to anyone with no tester limit.
 - [x] Submit build `0.1.0 (4)` only to TestFlight App Review.
-- [ ] After approval, confirm the public link accepts external testers.
+- [x] After approval, confirm the public link accepts external testers.
 - [ ] Confirm a reviewer can install the approved external TestFlight build.
 - [ ] Stop for owner review.
 
-Build `0.1.0 (4)` entered `Waiting for Review` on July 16, 2026. The public link is `https://testflight.apple.com/join/T1bCGkH6`; Apple will not allow testers to join until the group has an approved build. Do not use Xcode's TestFlight Internal Only upload option for the external build.
+Build `0.1.0 (4)` entered review on July 16, 2026 and was later made available through the public link at `https://testflight.apple.com/join/T1bCGkH6`. Do not use Xcode's TestFlight Internal Only upload option for an external build.
 
 ## Production App Store metadata
 
@@ -90,9 +114,9 @@ Build `0.1.0 (4)` entered `Waiting for Review` on July 16, 2026. The public link
 
 > AgentSlate is a focused iPhone remote control for developers supervising coding agents in Herdr on a Mac.
 >
-> See live Herdr sessions and agents, focus the agent you are watching, and send common navigation keys or short instructions without reaching for the desktop keyboard. Hold Voice to dictate on-device, then send, cancel, or review the text before it leaves your phone.
+> See live Herdr sessions and agents, focus the agent you are watching, and send common navigation keys or short instructions without reaching for the desktop keyboard. Hold Voice to dictate with Apple's on-device speech framework by default, or opt into a user-funded cloud pipeline, then send, cancel, or review the text.
 >
-> AgentSlate connects directly over your private Tailscale network. It has no AgentSlate account, cloud backend, analytics, advertising, or tracking. Each iPhone pairs with a short-lived code and receives its own revocable credential.
+> AgentSlate connects directly over your private Tailscale network. It has no AgentSlate account, developer-operated cloud backend, analytics, advertising, or tracking. Optional cloud dictation connects to OpenRouter for Whisper transcription or Soniox for real-time transcription using API keys supplied by the user. Optional cleanup routes transcript text through OpenRouter to Google. Each iPhone pairs with a short-lived code and receives its own revocable credential.
 >
 > A Mac running Herdr, Tailscale, and the free open-source AgentSlate bridge is required for live use. Offline Demo Mode is included.
 >
@@ -102,7 +126,7 @@ Build `0.1.0 (4)` entered `Waiting for Review` on July 16, 2026. The public link
 - Support URL: `https://danielou1208.github.io/agentslate/support/`
 - Marketing URL: `https://danielou1208.github.io/agentslate/`
 - Privacy policy URL: `https://danielou1208.github.io/agentslate/privacy/`
-- App privacy: Data Not Collected
+- App privacy: Reassess against the providers' then-current retention terms before the next upload. The current privacy manifest keeps collected data empty because zero-retention/transient request processing is not retained beyond servicing the request.
 - Tracking: No
 - Encryption declaration: `ITSAppUsesNonExemptEncryption=NO`
 - EU Digital Services Act: Non-trader
@@ -115,13 +139,14 @@ Prepare three screenshots without real names, workspaces, prompts, IP addresses,
 
 1. **See every agent at a glance** — live dashboard with multiple sample states and a selected agent.
 2. **Control the agent you are watching** — keypad, session picker, and clearly identified target.
-3. **Speak, review, and send privately** — on-device dictation review or the offline Demo Mode.
+3. **Choose how you dictate** — Apple on-device speech, optional user-funded cloud dictation, or the offline Demo Mode.
 
 Verify legibility, no placeholder status-bar artifacts, and consistent 6.9-inch dimensions before upload.
 
 ### Production draft stop
 
 - [ ] Fill in all production metadata and upload the three screenshots.
+- [ ] Update App Store privacy answers and review `PrivacyInfo.xcprivacy` for optional cloud audio and transcript processing.
 - [ ] Select the verified build only when preparing the draft for owner review.
 - [ ] Leave version `0.1.0` in **Prepare for Submission**.
 - [ ] Do not click **Add for Review**, **Submit for Review**, or any production release action.
