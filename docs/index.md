@@ -14,6 +14,8 @@ AgentSlate is an open-source iPhone companion for supervising coding agents runn
 
 [Join the TestFlight beta](https://testflight.apple.com/join/T1bCGkH6) · [View the source](https://github.com/DanielOu1208/agentslate) · [Get support]({{ "/support/" | relative_url }}) · [Read the privacy policy]({{ "/privacy/" | relative_url }})
 
+> **TestFlight status:** Build `0.2.0 (5)` is awaiting Apple Beta App Review. The public link still offers the previously approved `0.1.0` beta; the new dictation release will appear there after Apple approves it.
+
 ## Quick start
 
 Live control requires Herdr 0.8.0 or newer. Run `herdr update --handoff` from a terminal outside Herdr when upgrading an older installation with running sessions.
