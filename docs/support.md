@@ -16,14 +16,17 @@ On the Mac:
 agentslate doctor
 brew services info agentslate
 agentslate devices list
+herdr --version
 ```
 
 Confirm that:
 
-- Herdr is running;
+- Herdr 0.8.0 or newer is running;
 - the Mac and iPhone are connected to the same Tailscale network;
 - the AgentSlate Homebrew service is running; and
 - the iPhone has not been revoked.
+
+If Herdr is older, run `herdr update --handoff` from a terminal outside Herdr, then rerun `agentslate doctor`.
 
 For a new phone, run `agentslate pair` and enter the new six-digit code within ten minutes. A pairing code works once and locks after five failed attempts.
 

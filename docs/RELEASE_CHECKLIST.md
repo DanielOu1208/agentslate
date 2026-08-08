@@ -1,4 +1,21 @@
-# AgentSlate 0.1.0 Release Checklist
+# AgentSlate Release Checklist
+
+## 0.2.0 local candidate
+
+- Marketing version: `0.2.0`
+- Build: `5`
+- Minimum Herdr: `0.8.0` (local protocol 19)
+- Status: local preparation and automated validation only
+
+The 0.2 candidate includes the optional OpenRouter and Soniox dictation work. Do not push the branch or candidate commits, create or push a release tag, update the Homebrew formula or tap, upload to TestFlight, or change App Store Connect until the owner completes physical-iPhone testing and gives explicit approval.
+
+- [ ] Complete physical Apple, OpenRouter, Soniox, fallback, haptic, and latency acceptance.
+- [ ] Confirm live control against Herdr 0.8.0 on the owner's Mac and iPhone.
+- [ ] Receive explicit owner approval for the TestFlight upload.
+- [ ] After approval, upload `0.2.0 (5)` and update the existing external beta group.
+- [ ] After separate source-release approval, tag `v0.2.0`, calculate its archive checksum, and update the Homebrew formula and tap.
+
+## 0.1.0 historical release
 
 The project owner has authorized preparation and publication of the open-source repository, Homebrew release, and external TestFlight beta. Production App Store submission and release remain explicitly out of scope.
 
@@ -80,11 +97,11 @@ The owner chose to proceed with AgentSlate after reviewing the same-category nam
 - [x] Create the `AgentSlate Beta` external testing group.
 - [x] Create a public link open to anyone with no tester limit.
 - [x] Submit build `0.1.0 (4)` only to TestFlight App Review.
-- [ ] After approval, confirm the public link accepts external testers.
+- [x] After approval, confirm the public link accepts external testers.
 - [ ] Confirm a reviewer can install the approved external TestFlight build.
 - [ ] Stop for owner review.
 
-Build `0.1.0 (4)` entered `Waiting for Review` on July 16, 2026. The public link is `https://testflight.apple.com/join/T1bCGkH6`; Apple will not allow testers to join until the group has an approved build. Do not use Xcode's TestFlight Internal Only upload option for the external build.
+Build `0.1.0 (4)` entered review on July 16, 2026 and was later made available through the public link at `https://testflight.apple.com/join/T1bCGkH6`. Do not use Xcode's TestFlight Internal Only upload option for an external build.
 
 ## Production App Store metadata
 

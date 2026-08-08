@@ -12,9 +12,11 @@ permalink: /
 
 AgentSlate is an open-source iPhone companion for supervising coding agents running in Herdr on your Mac. It connects directly over your private Tailscale network; there is no AgentSlate cloud service or account.
 
-[View the source](https://github.com/DanielOu1208/agentslate) · [Get support]({{ "/support/" | relative_url }}) · [Read the privacy policy]({{ "/privacy/" | relative_url }})
+[Join the TestFlight beta](https://testflight.apple.com/join/T1bCGkH6) · [View the source](https://github.com/DanielOu1208/agentslate) · [Get support]({{ "/support/" | relative_url }}) · [Read the privacy policy]({{ "/privacy/" | relative_url }})
 
 ## Quick start
+
+Live control requires Herdr 0.8.0 or newer. Run `herdr update --handoff` from a terminal outside Herdr when upgrading an older installation with running sessions.
 
 ```sh
 brew install DanielOu1208/agentslate/agentslate

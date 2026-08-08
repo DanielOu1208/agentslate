@@ -5,12 +5,11 @@ Generated from `Cargo.lock` with `cargo-about`. Regenerate with:
 ```sh
 cargo about generate --locked --output-file docs/rust-dependency-licenses.md packaging/rust-licenses.hbs
 ```
-
 ## Components
 
 | Crate | Version | License |
 |---|---:|---|
-| [agentslate](https://github.com/DanielOu1208/agentslate) | 0.1.0 | MIT |
+| [agentslate](https://github.com/DanielOu1208/agentslate) | 0.2.0 | MIT |
 | [block-buffer](https://github.com/RustCrypto/utils) | 0.10.4 | MIT OR Apache-2.0 |
 | [bytes](https://github.com/tokio-rs/bytes) | 1.12.1 | MIT |
 | [cfg-if](https://github.com/rust-lang/cfg-if) | 1.0.4 | MIT OR Apache-2.0 |
@@ -1333,7 +1332,7 @@ SOFTWARE.
 
 Used by:
 
-- [agentslate 0.1.0](https://github.com/DanielOu1208/agentslate)
+- [agentslate 0.2.0](https://github.com/DanielOu1208/agentslate)
 
 ```text
 MIT License

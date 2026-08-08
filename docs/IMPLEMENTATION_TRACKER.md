@@ -1,6 +1,6 @@
 # AgentSlate Implementation Tracker
 
-Last updated: 2026-07-31
+Last updated: 2026-08-08
 Allowed states: `Not started`, `In progress`, `Blocked`, `Done`
 
 A task is `Done` only when its acceptance evidence is recorded here. A phase is `Done` only when every exit criterion passes.
@@ -9,19 +9,21 @@ A task is `Done` only when its acceptance evidence is recorded here. A phase is 
 
 | Phase | Status | Exit result |
 |---|---|---|
-| 0. Herdr API validation | Done | Disposable prompt controlled through the bridge |
+| 0. Herdr API validation | Done | Herdr 0.8.0/protocol 19 schema and real binary accepted by the bridge |
 | 1. Rust connector vertical slice | Done | Local and Tailscale acceptance checks passed |
 | 2. SwiftUI dashboard and keypad | In progress | SwiftUI dashboard and keypad simulator-verified; physical iPhone acceptance pending |
 | 3. Typed and voice interaction | In progress | Apple and optional cloud dictation pipelines are automated-test verified; full physical speech and fallback acceptance remain open |
 | 4. Pairing and lifecycle | In progress | Protocol v3 Mac and Swift foundations implemented; iPhone onboarding/Forget Bridge acceptance pending |
 | 5. Hardening | Not started | Starts after daily-use validation |
-| 6. Release staging | In progress | External build `0.1.0 (4)` is waiting for TestFlight review; its uncapped public link activates after approval, while production remains an unsubmitted draft |
+| 6. Release staging | In progress | Local `0.2.0 (5)` candidate and MacBook bridge are ready for owner testing; no source, Homebrew formula, or TestFlight publication is authorized |
 
 ## Phase 0: Herdr API validation
 
 - [x] Confirm Herdr 0.7.4 exposes `session.snapshot` and normalized agent records.
 - [x] Confirm `pane.send_keys`, `pane.send_input`, and subscriptions exist in the installed schema.
 - [x] Confirm observing state uses a separate local Unix socket and does not take over the visible Herdr client.
+- [x] Confirm Herdr 0.8.0/protocol 19 preserves the snapshot, focus, key, and text methods used by AgentSlate.
+- [x] Reject Herdr protocols older than 19 and ignore nullable non-agent snapshot records.
 - [x] Navigate and submit a disposable test prompt through the bridge probe.
 - [x] Record input acknowledgement latency.
 
@@ -74,7 +76,7 @@ Exit criterion: the authenticated probe lists current agents and safely operates
 - [x] Add a native header menu that remembers and safely falls back between running Herdr sessions.
 - [x] Add a connected D-pad, Enter, Tab, haptics, and disconnected-state disabling.
 - [x] Add dedicated Escape and Shift+Tab keys.
-- [ ] Verify the app-side enhanced Shift+Tab sequence against Codex on a physical device.
+- [ ] Verify ordinary Shift+Tab routing against Codex on a physical device.
 - [x] Add working Accept and Deny shortcuts for blocked Codex, Claude Code, OMP, Cursor, and OpenCode agents; keep blank-agent slots local-only.
 - [ ] Verify at least three simultaneous agents on a physical iPhone.
 
@@ -92,9 +94,11 @@ Exit criterion: command approvals and question pickers can be completed from the
 - [x] Add Soniox `stt-rt-v5` as a separate user-funded real-time engine with live provisional text and its own Keychain credential.
 - [x] Replace the cloud toggle with an explicit Apple/OpenRouter/Soniox engine choice and optional cleanup for both cloud engines.
 - [x] Add automatic Apple file-transcription fallback, raw-transcript cleanup fallback, and raw-text recovery in Edit.
+- [x] Preserve the latest live Soniox transcript when stream finalization and Apple fallback both fail.
 - [x] Keep Apple and cloud capture prepared while moving audio-session activation off the main UI actor.
 - [x] Enter the talking presentation on native microphone touch-down and isolate cleanup behind a rewrite-only system prompt.
-- [x] Add a ten-bar microphone-level meter that reuses both existing audio capture paths.
+- [x] Show a flat live speech waveform and one compact pill naming only the current transcription or cleanup provider.
+- [x] Clear transient keypad transcription information after a successful voice send while retaining it after failures.
 - [x] Mark every voice-originated prompt so the selected agent can resolve obvious phonetic project-name errors and clarify ambiguous terms.
 - [ ] Verify OpenRouter and Soniox transcription, live Soniox text, cleanup on/off, two-minute cutoff, Apple fallback, key removal, and interruption handling on a physical iPhone.
 
@@ -137,9 +141,11 @@ Exit criterion: the app is reliable enough for repeated daily supervision.
 - [x] Upload build `0.1.0 (3)` and enable it for the existing internal TestFlight group.
 - [x] Upload build `0.1.0 (4)`, add it to `AgentSlate Beta`, and submit it only to TestFlight App Review after owner approval.
 - [x] Create an open-to-anyone TestFlight public link with no tester limit.
-- [ ] Confirm the public link accepts testers after Beta App Review approval.
+- [x] Confirm the public link accepts testers after Beta App Review approval.
 - [ ] Install the approved external TestFlight build on reviewers' phones.
 - [x] Keep production version `0.1.0` in Prepare for Submission; do not submit it to App Review.
+- [x] Prepare local marketing version `0.2.0`, build `5`, without changing App Store Connect or TestFlight.
+- [ ] Complete owner physical-iPhone acceptance before any 0.2 upload or publication.
 
 Exit criterion: the external TestFlight build is approved and installed, public source/Homebrew artifacts are available, and the production App Store version remains an unsubmitted draft.
 
@@ -188,10 +194,16 @@ Exit criterion: the external TestFlight build is approved and installed, public 
 | 2026-07-20 | Prefix every Apple and cloud voice send with a short transcript marker | The selected coding agent can use repository context to resolve obvious phonetic names without sharing that context with cleanup providers; ambiguous terms must be clarified |
 | 2026-07-23 | Keep capture prepared but move its remaining startup work to a dedicated actor | The app does not hold an idle microphone session, while audio-session activation and recorder or engine startup can no longer block touch-down visuals and haptics on the main actor |
 | 2026-07-28 | Reuse the active capture path for the audio meter | Apple buffers and cloud recorder metering already expose the needed signal, so a second recorder, persisted samples, and a visualizer dependency are unnecessary |
-| 2026-07-28 | Keep the Shift+Tab fix inside AgentSlate and scope it to Codex | The bridge sends Codex the enhanced-keyboard sequence a physical Shift+Tab produces, while every other agent keeps the existing Herdr key route |
+| 2026-07-28 | Keep the first Shift+Tab workaround inside AgentSlate and scope it to Codex | Superseded on 2026-08-08: delivering the enhanced-keyboard sequence through Herdr's raw-input route was unreliable, and Herdr's named-key route was later confirmed to emit no terminal bytes. |
 | 2026-07-31 | Treat Soniox v5 as the non-Whisper alternative and keep three explicit engines | Apple stays the local default, existing cloud users migrate to OpenRouter, and saving a provider key never silently changes the active engine |
 | 2026-07-31 | Make cleanup optional for both cloud engines but never explicit Apple mode | Cleanup defaults on and uses the saved OpenRouter key; Soniox remains usable without that key, while cloud-mode Apple fallback follows the selected cleanup setting |
 | 2026-07-31 | Stream Soniox directly with a user-supplied long-lived key | The local-first app adds no backend or SDK; one microphone stream feeds Soniox, the existing meter, and a temporary Apple-fallback WAV that is always deleted |
+| 2026-08-07 | Retain usable live Soniox text as the last fallback | The end-of-stream request uses Soniox's documented empty text frame; if finalization and Apple file transcription both fail, already-visible live text is more useful than discarding the transcript |
+| 2026-08-07 | Show the current speech provider without pipeline history | One compact pill names only the active Apple, Whisper, Soniox, Apple Fallback, or Gemini Cleanup stage during capture and processing; it uses the engine captured when speech begins so later settings changes cannot falsify the label |
+| 2026-08-07 | Clear voice status only after successful delivery | A bridge acknowledgement ends the transient keypad presentation immediately, while failed sends retain context so useful dictation is not silently discarded |
+| 2026-08-07 | Require Herdr 0.8.0 for AgentSlate 0.2 | Protocol 19 retains the narrow socket API AgentSlate uses; rejecting older snapshots gives a clear support boundary without a Herdr API rewrite or new dependency |
+| 2026-08-07 | Prepare `0.2.0 (5)` and update only the owner's MacBook bridge | Local service replacement supports device testing without publishing a source tag, Homebrew formula, TestFlight build, or App Store Connect change |
+| 2026-08-08 | Send physical-key Shift+Tab through `pane.send_text`, with an OMP-specific enhanced encoding | Live testing proved terminal-standard BackTab (`Esc [ Z`) with Codex and showed that OMP requires enhanced Shift+Tab (`Esc [ 9 ; 2 u`) while keyboard enhancement is active. Codex and unrecognized agent kinds therefore use the portable standard sequence; OMP alone uses the enhanced sequence. |
 
 ## Verification evidence
 
@@ -234,5 +246,14 @@ Exit criterion: the external TestFlight build is approved and installed, public 
 | 2026-07-23 | Nonblocking dictation startup | Automated pass; owner device test pending | All 16 iPhone 17e simulator tests, Xcode static analysis, and a signed generic-device build passed. Apple and cloud audio objects now run on a dedicated actor instead of the main UI actor; no physical touch-down, haptic, first-word capture, or interruption behavior was exercised. |
 | 2026-07-28 | Immediate voice entry and rewrite-only cleanup | Automated pass; owner device test pending | The microphone now begins from a zero-duration native long-press recognizer. Cleanup treats the transcript as untrusted data, permits rephrasing, and instructs Gemini to rewrite rather than answer or act on it; request failures and invalid text still fall back to the raw transcript. All 17 iPhone 17 Pro Max simulator tests pass; physical touch-down, haptic timing, drag targets, VoiceOver, and live Gemini cleanup remain for owner testing. |
 | 2026-07-28 | Ten-bar microphone meter | Automated pass; physical audio pending | The Apple tap computes RMS from its existing buffer, cloud recording samples native recorder metering at 20 Hz, and both feed one transient UI level. All 17 iPhone 17e simulator tests pass; real microphone sensitivity, silence, Reduce Motion, and audio-thread stability remain for physical-iPhone review. |
-| 2026-07-28 | Codex Shift+Tab app fix | Automated pass; physical Codex pending | The bridge now sends Codex `Esc [ 9 ; 2 u` through Herdr's existing raw-input endpoint and preserves normal `shift+tab` key forwarding for other agents. Rust route coverage passes; live phone-to-Codex acceptance remains pending. |
+| 2026-07-28 | Codex Shift+Tab app fix | Automated pass; physical Codex pending | The bridge sends Codex `Esc [ 9 ; 2 u` through Herdr's existing raw-input endpoint and preserves normal `shift+tab` key forwarding for other agents. Rust route coverage passed; later physical testing found the Codex-specific route unreliable. |
 | 2026-07-31 | Soniox v5 real-time dictation | Automated pass; owner device test pending | All 20 iPhone 17e simulator app tests, Xcode static analysis, a generic-device build, and all 21 Swift package tests passed. No physical microphone interaction, live Soniox/OpenRouter request, or cloud-to-Apple fallback was exercised. |
+| 2026-08-07 | Isolated Herdr 0.8 compatibility | Pass | The official macOS arm64 Herdr 0.8.0 binary reported protocol 19; AgentSlate doctor connected to its isolated socket and decoded its real snapshot without touching live sessions. |
+| 2026-08-07 | Live Herdr 0.8 upgrade | Pass | Herdr's supported live handoff upgraded `default`, `aeri`, `character-harness`, and `work` from 0.7.5/protocol 17 to 0.8.0/protocol 19. All workspace, tab, and pane IDs were preserved; config and the running AgentSlate 0.1 service were unchanged; OMP, Codex, and OpenCode integrations were refreshed to their current bundled versions. AgentSlate 0.2 doctor passed against every session without sending input. |
+| 2026-08-07 | AgentSlate 0.2 local candidate | Automated pass; owner device test pending | Rust formatting, strict Clippy, all 15 Rust tests, the locked release build, all 22 Swift package tests, all 20 iPhone simulator tests, Xcode static analysis, and an unsigned generic-device archive passed. Coverage includes the authenticated background-monitor path that reports an actionable Herdr upgrade error to the phone without repeated events. The archive reports version 0.2.0 build 5. No physical-iPhone, live dictation-provider, TestFlight upload, or App Store Connect testing was performed. |
+| 2026-08-07 | Standard Shift+Tab diagnosis | Failed route identified; replacement verification pending | The deployed bridge acknowledged Shift+Tab while a fresh Codex pane stayed in Default mode. Request capture showed it used `pane.send_input` with `Esc [ Z`; direct API calls behaved the same, while `herdr pane send-text` changed Codex to Plan. Proxying that working CLI call identified `pane.send_text` with literal `Esc [ Z`. No existing user agent pane received diagnostic input. |
+| 2026-08-08 | Physical-key Shift+Tab replacement | Automated and live local bridge pass; physical iPhone pending | Authenticated Rust route tests require Codex, OpenCode, and other non-OMP kinds to use `pane.send_text` with terminal-standard `Esc [ Z`; OMP alone uses enhanced `Esc [ 9 ; 2 u`. Ordinary prompts remain on `pane.send_input`. Through an isolated build, temporary pairing, and disposable Herdr 0.8 session, a fresh Codex changed from Default to Plan and OMP 17.2.11 emitted `Plan mode enabled`. The temporary device, bridge, agent processes, persisted disposable Codex session, and Herdr session were removed; no existing user agent pane received input. OpenCode behavior and physical phone-to-agent acceptance remain open. |
+| 2026-08-07 | Soniox release recovery | Automated pass; owner device retest pending | The iPhone simulator ran all 20 app tests, all 22 Swift package tests passed, Xcode static analysis passed, and the unsigned archive remained version 0.2.0 build 5. Unit coverage checks the documented empty text end-of-stream message and nonblank partial eligibility; the two-provider failure branch, physical microphone, and live Soniox/Apple fallback remain for device testing. |
+| 2026-08-07 | MacBook bridge update | Pass | The locked release binary passed 15 Rust tests, strict Clippy, the focused Shift+Tab route test, and `doctor`, then replaced only the Homebrew-managed executable and restarted `homebrew.mxcl.agentslate`. The installed hash matches the tested build, the new service process owns the Tailscale listener at `100.69.191.104:8765`, all four Herdr sessions remained running, and the previous binary is recoverable as `agentslate.pre-local-0.2.0-20260807` in the same Homebrew bin directory. |
+| 2026-08-07 | Speech waveform, current-provider status, and delivery cleanup | Automated pass; physical audio/provider review pending | All 24 iPhone 17 Pro simulator tests passed. Coverage checks nonlinear waveform response, captured engine mapping, current-provider labels and hidden states, success/failure resolution, and recovery-draft construction. The current-provider pill reports one active stage rather than pipeline history. Integrated acknowledgement, re-preparation, live microphone animation, Reduce Motion appearance, provider fallback, and final visual balance remain for owner-device review. |
+| 2026-08-08 | AgentSlate 0.2 final validation and MacBook deployment | Automated and deployed-service pass; physical iPhone pending | Rust formatting, strict Clippy, all 17 Rust tests, the locked release build, all 22 Swift package tests, all 24 iPhone simulator tests, Xcode Release analysis, and an unsigned generic-device archive passed; the archive reports version 0.2.0 build 5. The installed bridge SHA-256 is `34a0a5424994b97e06ad5d2ef8f7cbddae49998f83effac9f5d53865cc0a4f3e`, owns `100.69.191.104:8765`, and passes `doctor` against all four preserved Herdr sessions. Through the deployed service, a disposable Codex 0.147.0 pane entered Plan mode and OMP 17.2.11 emitted `Plan mode enabled`; both temporary devices and the disposable session were removed, while the three existing paired iPhones were preserved. The prior executable is recoverable as `/opt/homebrew/opt/agentslate/bin/agentslate.pre-shifttab-20260808-005120`. No physical-iPhone or live dictation-provider acceptance was performed. |
