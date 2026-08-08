@@ -32,6 +32,7 @@ private final class FakeBridge: @unchecked Sendable {
   private let dropFirstConnection: Bool
   private let dropOnPing: Bool
   private let ignorePing: Bool
+  private let unsupportedHerdr: Bool
   private var connections = 0
   private var snapshotRequests = 0
   private var recorded: [RecordedRequest] = []
@@ -40,12 +41,14 @@ private final class FakeBridge: @unchecked Sendable {
     rejectAuthentication: Bool = false,
     dropFirstConnection: Bool = false,
     dropOnPing: Bool = false,
-    ignorePing: Bool = false
+    ignorePing: Bool = false,
+    unsupportedHerdr: Bool = false
   ) throws {
     self.rejectAuthentication = rejectAuthentication
     self.dropFirstConnection = dropFirstConnection
     self.dropOnPing = dropOnPing
     self.ignorePing = ignorePing
+    self.unsupportedHerdr = unsupportedHerdr
     listener = try NWListener(using: .tcp, on: .any)
   }
 
@@ -144,7 +147,7 @@ private final class FakeBridge: @unchecked Sendable {
       } else if dropFirstConnection, handler.number == 1 {
         handler.send([response(id: id, type: "authenticated")], cancelAfterSending: true)
       } else {
-        handler.send([
+        var messages = [
           response(id: id, type: "authenticated"),
           event(
             type: "session_snapshot",
@@ -154,9 +157,24 @@ private final class FakeBridge: @unchecked Sendable {
                 ["name": "team", "default": false],
               ]
             ]),
-          event(type: "herdr_state", extra: ["session": "default", "state": "connected"]),
-          snapshot(eventID: 2),
-        ])
+        ]
+        if unsupportedHerdr {
+          messages.append(
+            event(
+              type: "error",
+              extra: [
+                "session": "default",
+                "code": "unsupported_herdr_version",
+                "message": "Herdr 0.8.0 or newer is required on the connected Mac",
+              ]))
+          messages.append(
+            event(type: "herdr_state", extra: ["session": "default", "state": "unavailable"]))
+        } else {
+          messages.append(
+            event(type: "herdr_state", extra: ["session": "default", "state": "connected"]))
+          messages.append(snapshot(eventID: 2))
+        }
+        handler.send(messages)
       }
     case "request_snapshot":
       lock.withLock { snapshotRequests += 1 }
@@ -219,8 +237,8 @@ private final class FakeBridge: @unchecked Sendable {
       "version": 3,
       "type": "agent_snapshot",
       "session": "default",
-      "herdr_protocol": 16,
-      "herdr_version": "0.7.4",
+      "herdr_protocol": 19,
+      "herdr_version": "0.8.0",
       "agents": [
         [
           "id": "w1:p1",
@@ -424,6 +442,34 @@ private func withTimeout<T: Sendable>(
   #expect(try await withTimeout { try await failure.value } == .authenticationFailed)
   try await Task.sleep(for: .milliseconds(700))
   #expect(bridge.connectionCount == 1)
+  bridge.stop()
+}
+
+@Test func unsupportedHerdrVersionMonitorEventIsReported() async throws {
+  let bridge = try FakeBridge(unsupportedHerdr: true)
+  let port = try await bridge.start()
+  let client = try BridgeClient(
+    host: "127.0.0.1",
+    port: port,
+    credential: testCredential
+  )
+  let failure = Task { () throws -> BridgeError in
+    for await event in client.events {
+      if case .error(let error) = event {
+        return error
+      }
+    }
+    throw TestFailure.timeout
+  }
+
+  await client.start()
+  #expect(
+    try await withTimeout { try await failure.value }
+      == .remote(
+        code: "unsupported_herdr_version",
+        message: "Herdr 0.8.0 or newer is required on the connected Mac"
+      ))
+  await client.stop()
   bridge.stop()
 }
 
