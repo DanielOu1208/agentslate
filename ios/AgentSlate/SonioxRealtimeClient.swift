@@ -6,6 +6,15 @@ func makeSonioxConfiguration(apiKey: String) throws -> Data {
   return try JSONEncoder().encode(SonioxConfiguration(apiKey: apiKey))
 }
 
+func sonioxEndOfStreamMessage() -> URLSessionWebSocketTask.Message {
+  .string("")
+}
+
+func recoverableSonioxPartial(_ text: String) -> String? {
+  let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+  return text.isEmpty ? nil : text
+}
+
 struct SonioxToken: Decodable, Equatable, Sendable {
   let text: String
   let isFinal: Bool
@@ -127,7 +136,7 @@ struct SonioxRealtimeClient: Sendable {
         try Task.checkCancellation()
         finishingBuilder.yield(())
         finishingBuilder.finish()
-        try await socket.send(.data(Data()))
+        try await socket.send(sonioxEndOfStreamMessage())
         return .audioFinished
       }
       group.addTask {

@@ -27,6 +27,7 @@ actor VoiceDictationController {
     case audioSetupFailed
     case notListening
     case transcriptionFailed
+    case sonioxAndAppleFallbackFailed(soniox: String, apple: String)
 
     var errorDescription: String? {
       switch self {
@@ -42,6 +43,8 @@ actor VoiceDictationController {
         "Voice dictation is not active."
       case .transcriptionFailed:
         "Cloud and on-device transcription both failed. Try again."
+      case .sonioxAndAppleFallbackFailed(let soniox, let apple):
+        "Soniox could not finish: \(soniox) Apple fallback also failed: \(apple)"
       }
     }
   }
@@ -414,16 +417,25 @@ actor VoiceDictationController {
       }
     } catch is CancellationError {
       throw CancellationError()
-    } catch {
+    } catch let sonioxError {
       await onPhase(.appleFallback)
       do {
         rawText = try await transcribeAppleFile(recordingURL)
         notice = "Soniox unavailable; used Apple transcription."
       } catch is CancellationError {
         throw CancellationError()
-      } catch {
-        finishSession(for: generation)
-        throw Failure.transcriptionFailed
+      } catch let appleError {
+        if let partial = recoverableSonioxPartial(lastPartial) {
+          rawText = partial
+          notice =
+            "Soniox could not finalize and Apple fallback was unavailable; used the latest live transcript."
+        } else {
+          finishSession(for: generation)
+          throw Failure.sonioxAndAppleFallbackFailed(
+            soniox: sonioxError.localizedDescription,
+            apple: appleError.localizedDescription
+          )
+        }
       }
     }
 

@@ -47,9 +47,14 @@ struct ContentView: View {
               actionEnabled: model.canSendAction,
               voiceState: model.voiceState,
               partialTranscript: model.partialTranscript,
+              voiceProvider: model.voiceProvider,
+              hasVoiceDraft: model.voiceDraft != nil,
               send: { key in Task { await model.send(key) } },
               sendAction: { action in Task { await model.send(action) } },
-              retryVoice: { Task { await model.prepareVoice() } }
+              retryVoice: {
+                guard model.voiceDraft == nil else { return }
+                Task { await model.prepareVoice() }
+              }
             )
           }
           .frame(width: width)
@@ -70,6 +75,7 @@ struct ContentView: View {
             state: model.voiceState,
             transcript: model.partialTranscript,
             level: model.voiceLevel,
+            provider: model.voiceProvider,
             action: armedVoiceAction,
             targets: targets,
             contentWidth: width,
@@ -133,12 +139,16 @@ struct ContentView: View {
       }
     }
     .onChange(of: showingSettings) { _, isShowing in
-      guard !isShowing, model.hasConfiguration || model.isDemoMode else { return }
+      guard !isShowing, model.voiceDraft == nil,
+        model.hasConfiguration || model.isDemoMode
+      else { return }
       Task { await model.prepareVoice() }
     }
     .onChange(of: scenePhase) { _, phase in
       if phase == .active {
-        guard model.hasConfiguration || model.isDemoMode else { return }
+        guard model.voiceDraft == nil,
+          model.hasConfiguration || model.isDemoMode
+        else { return }
         Task { await model.prepareVoice() }
       } else {
         Task { await model.cancelVoice() }
@@ -146,7 +156,7 @@ struct ContentView: View {
     }
     .onChange(of: model.canSend) { _, canSend in
       Task {
-        if canSend {
+        if canSend, model.voiceDraft == nil {
           await model.prepareVoice()
         } else {
           await model.cancelVoice()
@@ -496,6 +506,8 @@ private struct ControlBank: View {
   let actionEnabled: Bool
   let voiceState: VoiceState
   let partialTranscript: String
+  let voiceProvider: VoiceProvider?
+  let hasVoiceDraft: Bool
   let send: (RemoteKey) -> Void
   let sendAction: (RemoteAction) -> Void
   let retryVoice: () -> Void
@@ -546,54 +558,62 @@ private struct ControlBank: View {
 
   @ViewBuilder
   private var voiceStatusLine: some View {
-    Group {
-      switch voiceState {
-      case .preparing:
-        Text("Preparing voice…")
-          .foregroundStyle(Palette.secondaryText)
-          .accessibilityLabel("Preparing voice")
-      case .starting:
-        Text("Starting microphone…")
-          .foregroundStyle(Palette.secondaryText)
-          .accessibilityLabel("Starting microphone")
-      case .listening:
-        Text(partialTranscript.isEmpty ? "Listening…" : partialTranscript)
-          .foregroundStyle(Palette.secondaryText)
-          .accessibilityLabel(partialTranscript.isEmpty ? "Listening" : partialTranscript)
-      case .finalizing:
-        Text("Finishing dictation…")
-          .foregroundStyle(Palette.secondaryText)
-          .accessibilityLabel("Finishing dictation")
-      case .transcribing:
-        Text("Transcribing with Whisper…")
-          .foregroundStyle(Palette.secondaryText)
-          .accessibilityLabel("Transcribing with Whisper")
-      case .appleFallback:
-        Text("Using Apple transcription fallback…")
-          .foregroundStyle(Palette.secondaryText)
-          .accessibilityLabel("Using Apple transcription fallback")
-      case .cleaning:
-        Text("Cleaning up dictation…")
-          .foregroundStyle(Palette.secondaryText)
-          .accessibilityLabel("Cleaning up dictation")
-      case .failed(let message):
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-          VStack(alignment: .leading, spacing: 3) {
-            Text(message)
-              .foregroundStyle(Palette.blocked)
-            if !partialTranscript.isEmpty {
-              Text(partialTranscript)
-                .foregroundStyle(Palette.secondaryText)
+    HStack(alignment: .center, spacing: 10) {
+      if let voiceProvider {
+        VoiceProviderPill(provider: voiceProvider)
+      }
+
+      Group {
+        switch voiceState {
+        case .preparing:
+          Text("Preparing voice…")
+            .foregroundStyle(Palette.secondaryText)
+            .accessibilityLabel("Preparing voice")
+        case .starting:
+          Text("Starting microphone…")
+            .foregroundStyle(Palette.secondaryText)
+            .accessibilityLabel("Starting microphone")
+        case .listening:
+          Text(partialTranscript.isEmpty ? "Listening…" : partialTranscript)
+            .foregroundStyle(Palette.secondaryText)
+            .accessibilityLabel(partialTranscript.isEmpty ? "Listening" : partialTranscript)
+        case .finalizing:
+          Text("Finishing dictation…")
+            .foregroundStyle(Palette.secondaryText)
+            .accessibilityLabel("Finishing dictation")
+        case .transcribing:
+          Text("Transcribing with Whisper…")
+            .foregroundStyle(Palette.secondaryText)
+            .accessibilityLabel("Transcribing with Whisper")
+        case .appleFallback:
+          Text("Using Apple transcription fallback…")
+            .foregroundStyle(Palette.secondaryText)
+            .accessibilityLabel("Using Apple transcription fallback")
+        case .cleaning:
+          Text("Cleaning up dictation…")
+            .foregroundStyle(Palette.secondaryText)
+            .accessibilityLabel("Cleaning up dictation")
+        case .failed(let message):
+          HStack(alignment: .firstTextBaseline, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+              Text(message)
+                .foregroundStyle(Palette.blocked)
+              if !partialTranscript.isEmpty {
+                Text(partialTranscript)
+                  .foregroundStyle(Palette.secondaryText)
+              }
+            }
+            Spacer(minLength: 0)
+            if !hasVoiceDraft {
+              Button("Retry", action: retryVoice)
+                .buttonStyle(.borderless)
             }
           }
-          Spacer(minLength: 0)
-          Button("Retry", action: retryVoice)
-            .buttonStyle(.borderless)
-        }
-      case .notPrepared, .ready:
-        if !partialTranscript.isEmpty {
-          Text(partialTranscript)
-            .foregroundStyle(Palette.secondaryText)
+        case .notPrepared, .ready:
+          if !partialTranscript.isEmpty {
+            Text(partialTranscript)
+              .foregroundStyle(Palette.secondaryText)
+          }
         }
       }
     }
@@ -770,6 +790,7 @@ private struct TalkingPresentation: View {
   let state: VoiceState
   let transcript: String
   let level: Double
+  let provider: VoiceProvider?
   let action: VoiceReleaseAction
   let targets: VoiceTargetFrames
   let contentWidth: CGFloat
@@ -792,9 +813,15 @@ private struct TalkingPresentation: View {
           .position(x: targets.edit.midX, y: targets.edit.midY)
 
         VStack(spacing: 12) {
+          if let provider {
+            HStack {
+              Spacer()
+              VoiceProviderPill(provider: provider)
+            }
+          }
           VoiceTranscript(text: displayedTranscript)
             .frame(maxHeight: .infinity)
-          MicrophoneLevelMeter(level: level)
+          MicrophoneWaveform(level: level)
         }
         .frame(width: contentWidth, height: transcriptHeight)
         .position(
@@ -811,23 +838,45 @@ private struct TalkingPresentation: View {
   }
 }
 
-private struct MicrophoneLevelMeter: View {
+func waveformLevelResponse(level: Double) -> Double {
+  pow(min(max(level, 0), 1), 0.35)
+}
+
+private struct MicrophoneWaveform: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   let level: Double
-  private let weights = [0.45, 0.65, 0.85, 1.0, 0.75, 0.75, 1.0, 0.85, 0.65, 0.45]
+  private let weights = [0.28, 0.42, 0.58, 0.76, 0.90, 1.0, 0.90, 0.76, 0.58, 0.42, 0.28]
 
   var body: some View {
+    let response = waveformLevelResponse(level: level)
     HStack(alignment: .center, spacing: 4) {
       ForEach(weights.indices, id: \.self) { index in
         Capsule()
-          .fill(.white.opacity(0.92))
-          .frame(width: 4, height: 4 + 28 * level * weights[index])
+          .fill(Palette.ivory)
+          .frame(width: 5, height: 7 + 39 * response * weights[index])
       }
     }
-    .frame(height: 32)
-    .animation(reduceMotion ? nil : .linear(duration: 0.08), value: level)
+    .frame(width: 96, height: 50)
+    .animation(reduceMotion ? nil : .easeOut(duration: 0.10), value: response)
     .accessibilityHidden(true)
+  }
+}
+
+private struct VoiceProviderPill: View {
+  let provider: VoiceProvider
+
+  var body: some View {
+    Text(provider.rawValue)
+      .font(.system(size: 9, weight: .bold, design: .rounded))
+      .tracking(0.35)
+      .foregroundStyle(Palette.buttonIcon)
+      .padding(.horizontal, 8)
+      .padding(.vertical, 5)
+      .background(Palette.ivory, in: Capsule())
+      .fixedSize(horizontal: true, vertical: false)
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel(provider.accessibilityLabel)
   }
 }
 
@@ -1312,6 +1361,9 @@ private struct VoiceReviewView: View {
         }
       }
       .task {
+        if case .failed = model.voiceState {
+          sendError = model.errorMessage
+        }
         selection = TextSelection(insertionPoint: text.endIndex)
         editorFocused = true
       }
@@ -1653,8 +1705,8 @@ private struct SettingsView: View {
 
   private var appVersion: String {
     let info = Bundle.main.infoDictionary
-    let version = info?["CFBundleShortVersionString"] as? String ?? "0.1.0"
-    let build = info?["CFBundleVersion"] as? String ?? "3"
+    let version = info?["CFBundleShortVersionString"] as? String ?? "0.2.0"
+    let build = info?["CFBundleVersion"] as? String ?? "5"
     return "\(version) (\(build))"
   }
 }
@@ -1705,6 +1757,7 @@ private enum Palette {
   static let line = Color(red: 0.817, green: 0.842, blue: 0.872)
   static let buttonIcon = Color(red: 0.18, green: 0.20, blue: 0.24)
   static let secondaryText = Color(red: 0.32, green: 0.35, blue: 0.4)
+  static let ivory = Color(red: 0.98, green: 0.95, blue: 0.84)
   static let shadow = Color(red: 0.15, green: 0.19, blue: 0.24)
   static let blue = Color.blue
   static let blueHighlight = Color(red: 0.24, green: 0.51, blue: 1)

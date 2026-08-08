@@ -14,6 +14,92 @@ func audioLevelsClampAndNormalize() {
   #expect(normalizedAudioLevel(decibels: 6) == 1)
 }
 
+@Test
+func waveformLevelResponseIsNonlinearAndClamped() {
+  #expect(waveformLevelResponse(level: -1) == 0)
+  #expect(waveformLevelResponse(level: 0) == 0)
+  #expect(waveformLevelResponse(level: 1) == 1)
+  #expect(waveformLevelResponse(level: 2) == 1)
+  #expect(waveformLevelResponse(level: 0.01) > 0.01)
+  #expect(waveformLevelResponse(level: 0.01) < waveformLevelResponse(level: 0.25))
+  #expect(waveformLevelResponse(level: 0.25) < 1)
+}
+
+@Test
+func speechProviderEngineIsCapturedFromTheEffectiveMode() {
+  #expect(voiceEngine(for: .apple) == .apple)
+  #expect(voiceEngine(for: .openRouter(apiKey: "or", cleanupEnabled: false)) == .openRouter)
+  #expect(voiceEngine(for: .openRouter(apiKey: "or", cleanupEnabled: true)) == .openRouter)
+  #expect(voiceEngine(for: .soniox(apiKey: "sx", cleanupAPIKey: nil)) == .soniox)
+  #expect(voiceEngine(for: .soniox(apiKey: "sx", cleanupAPIKey: "or")) == .soniox)
+}
+
+@Test
+func speechProviderReflectsTheCurrentEngineAndProcessingStage() {
+  for state in [VoiceState.starting, .listening, .finalizing] {
+    #expect(currentVoiceProvider(engine: .apple, state: state) == .appleOnDevice)
+    #expect(currentVoiceProvider(engine: .openRouter, state: state) == .whisper)
+    #expect(currentVoiceProvider(engine: .soniox, state: state) == .soniox)
+  }
+  #expect(currentVoiceProvider(engine: .openRouter, state: .transcribing) == .whisper)
+  for engine in [DictationEngine.apple, .openRouter, .soniox] {
+    #expect(currentVoiceProvider(engine: engine, state: .appleFallback) == .appleFallback)
+    #expect(currentVoiceProvider(engine: engine, state: .cleaning) == .geminiCleanup)
+  }
+  #expect(
+    VoiceProvider.appleOnDevice.accessibilityLabel
+      == "Current transcription provider: Apple on-device.")
+  #expect(
+    VoiceProvider.geminiCleanup.accessibilityLabel
+      == "Current transcription provider: Gemini cleanup.")
+
+  for state in [
+    VoiceState.notPrepared, .preparing, .ready, .failed("Unavailable"),
+  ] {
+    #expect(currentVoiceProvider(engine: .soniox, state: state) == nil)
+  }
+}
+
+@Test
+func bridgeAcknowledgementAloneClearsVoicePresentation() {
+  let acknowledged = resolveVoiceSendCompletion(
+    acknowledged: true,
+    transcript: "keep no trace",
+    fallbackNotice: "Apple fallback was used."
+  )
+  #expect(acknowledged.shouldClear)
+  #expect(acknowledged.retainedTranscript.isEmpty)
+
+  let failed = resolveVoiceSendCompletion(
+    acknowledged: false,
+    transcript: "retain this transcript",
+    fallbackNotice: "Apple fallback was used."
+  )
+  #expect(!failed.shouldClear)
+  #expect(failed.retainedTranscript == "Apple fallback was used.\nretain this transcript")
+
+  let recoveryDraft = recoveryDraftForFailedVoiceSend(
+    completion: failed,
+    text: "retain this transcript",
+    rawText: "retain this transcript",
+    agentID: "agent-1",
+    agentName: "Codex",
+    session: "default"
+  )
+  #expect(recoveryDraft?.text == "retain this transcript")
+  #expect(recoveryDraft?.agentID == "agent-1")
+  #expect(recoveryDraft?.session == "default")
+  #expect(
+    recoveryDraftForFailedVoiceSend(
+      completion: acknowledged,
+      text: "discard",
+      rawText: "discard",
+      agentID: "agent-1",
+      agentName: "Codex",
+      session: "default"
+    ) == nil)
+}
+
 @MainActor
 @Test
 func agentOrderingAndKeypadAvailability() {
@@ -318,6 +404,18 @@ func sonioxConfigurationAndTranscriptAssembly() throws {
   #expect(json["sample_rate"] as? Int == 16_000)
   #expect(json["num_channels"] as? Int == 1)
   #expect(json["enable_endpoint_detection"] as? Bool == true)
+
+  switch sonioxEndOfStreamMessage() {
+  case .string(let value):
+    #expect(value.isEmpty)
+  case .data:
+    Issue.record("Soniox end-of-stream should use the documented empty text frame")
+  @unknown default:
+    Issue.record("Unexpected WebSocket message type")
+  }
+
+  #expect(recoverableSonioxPartial("  live transcript  ") == "live transcript")
+  #expect(recoverableSonioxPartial(" \n ") == nil)
 
   var transcript = SonioxTranscriptAssembler()
   transcript.apply([SonioxToken(text: "hel", isFinal: false)])
