@@ -168,4 +168,4 @@ The open beta additionally includes editable spoken instructions, hold-to-talk s
 - Dedicated Accept and Deny keys are watched-screen default-keymap conveniences for five supported agent kinds; they are not structured authorization and remain disabled unless the selected agent is blocked.
 - The Voice key uses Apple on-device hold-to-talk dictation by default, with optional user-funded OpenRouter Whisper and Soniox v5 real-time pipelines, automatic Apple/raw-text fallbacks, optional cloud cleanup, and the same Send, Cancel, and editable review outcomes. Finalized sends reuse the existing bridge text route.
 - Demo Mode is an offline review path with fixed sample data, not a simulated connection to the real bridge.
-- Version 0.1.0 stopped at external TestFlight. Version 0.2.0 build 5 is prepared locally for owner testing; source publication, Homebrew release, TestFlight upload, and production review require separate explicit approval.
+- Version 0.1.0 stopped at external TestFlight. Version 0.2.0 build 5 is published to source and Homebrew and is testing through the external TestFlight beta; production review requires separate explicit approval.

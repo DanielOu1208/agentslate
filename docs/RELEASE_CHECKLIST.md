@@ -5,7 +5,7 @@
 - Marketing version: `0.2.0`
 - Build: `5`
 - Minimum Herdr: `0.8.0` (local protocol 19)
-- Status: source and Homebrew release published; external TestFlight beta submitted for Beta App Review
+- Status: source and Homebrew release published; external TestFlight build approved and testing
 
 The 0.2 candidate includes Apple on-device dictation, optional OpenRouter-routed Whisper, and Soniox real-time transcription. On August 8, 2026, after the protected-recording fix and manual dictation smoke test, the owner explicitly authorized merging the PR, publishing the source and Homebrew release, and updating the existing external TestFlight beta. Production App Store submission and release remain out of scope.
 
@@ -17,6 +17,7 @@ The 0.2 candidate includes Apple on-device dictation, optional OpenRouter-routed
 - [x] After merge approval, merge the PR and wait for `main` CI before publishing a source release.
 - [x] Receive explicit owner approval for the TestFlight upload.
 - [x] After approval, upload `0.2.0 (5)`, add it to the existing `AgentSlate Beta` external group, and submit it only to TestFlight Beta App Review.
+- [x] Confirm `0.2.0 (5)` passed Beta App Review and entered external testing through the public link.
 - [x] Receive explicit owner approval for the source and Homebrew release.
 - [x] Publish `v0.2.0`, calculate its archive checksum, and update the Homebrew formula and tap.
 
@@ -72,7 +73,7 @@ The owner chose to proceed with AgentSlate after reviewing the same-category nam
 
 ## 0.2.0 TestFlight metadata
 
-Build `0.2.0 (5)` was uploaded at 4:16 AM PDT on August 8, 2026, validated by App Store Connect, assigned to both `Internal Testers` and the existing `AgentSlate Beta` external group, and submitted only to TestFlight Beta App Review. App Store Connect exposes `Remove from Review`, confirming the submitted state, but does not show a separate textual review-status label. The public link remains `https://testflight.apple.com/join/T1bCGkH6`. Production `0.1.0` remains in Prepare for Submission and was not changed.
+Build `0.2.0 (5)` was uploaded at 4:16 AM PDT on August 8, 2026, validated by App Store Connect, assigned to both `Internal Testers` and the existing `AgentSlate Beta` external group, and submitted only to TestFlight Beta App Review. On August 9, 2026, App Store Connect showed build 5 as `Testing`, with 89 days remaining, in the `AgentSlate Beta` external group. The public link remains enabled at `https://testflight.apple.com/join/T1bCGkH6`. Production `0.1.0` remains in Prepare for Submission and was not changed.
 
 ### Beta App Information
 

@@ -1,6 +1,6 @@
 # AgentSlate Implementation Tracker
 
-Last updated: 2026-08-08
+Last updated: 2026-08-09
 Allowed states: `Not started`, `In progress`, `Blocked`, `Done`
 
 A task is `Done` only when its acceptance evidence is recorded here. A phase is `Done` only when every exit criterion passes.
@@ -15,7 +15,7 @@ A task is `Done` only when its acceptance evidence is recorded here. A phase is 
 | 3. Typed and voice interaction | In progress | Apple and optional cloud dictation pipelines are automated-test verified; full physical speech and fallback acceptance remain open |
 | 4. Pairing and lifecycle | In progress | Protocol v3 Mac and Swift foundations implemented; iPhone onboarding/Forget Bridge acceptance pending |
 | 5. Hardening | Not started | Starts after daily-use validation |
-| 6. Release staging | In progress | Source and Homebrew 0.2.0 are live; TestFlight build 5 is submitted to Beta App Review, with approval and reviewer installation pending |
+| 6. Release staging | In progress | Source and Homebrew 0.2.0 are live; TestFlight build 5 is approved and testing externally, with reviewer installation pending |
 
 ## Phase 0: Herdr API validation
 
@@ -151,6 +151,7 @@ Exit criterion: the app is reliable enough for repeated daily supervision.
 - [x] Record the owner's manual dictation smoke pass and explicit decision to continue the remaining physical matrix as beta validation after publication.
 - [x] Publish tag and GitHub release `v0.2.0`, update the public Homebrew formula/tap, and verify the installed 0.2.0 service.
 - [x] Upload build `0.2.0 (5)`, retain the internal group, add `AgentSlate Beta`, and submit only to TestFlight Beta App Review.
+- [x] Confirm build `0.2.0 (5)` passed Beta App Review, entered external testing, and remains available through the enabled public link.
 
 Exit criterion: the external TestFlight build is approved and installed, public source/Homebrew artifacts are available, and the production App Store version remains an unsubmitted draft.
 
@@ -267,3 +268,4 @@ Exit criterion: the external TestFlight build is approved and installed, public 
 | 2026-08-08 | Review remediation and dictation hardening | Automated pass; physical audio/provider review pending | Rust formatting, strict Clippy, all 17 Rust tests, the locked release build, all 25 Swift package tests, all 35 iPhone 17 Pro simulator tests, Xcode Release analysis, and an unsigned arm64 archive passed. Coverage includes ordered session-scoped Herdr errors, review-only Soniox partial recovery, bounded provider/audio data, protected orphan cleanup, and cancellation ordering. Independent security and maintainability reviewers confirmed their findings were resolved. No physical microphone, lock-state file-protection, or live OpenRouter/Soniox request was exercised. |
 | 2026-08-08 | Protected Whisper recording regression | Build pass; owner manual smoke pass | The OpenRouter recorder now creates its empty WAV before applying complete file protection and still applies protection before recording microphone audio. A generic iOS Simulator build and `git diff --check` passed; CoreSimulator failed to launch runtime tests with an infrastructure `Busy`/data-migration error. The owner then reported the physical dictation flow working well. The full fallback, interruption, cutoff, haptic, latency, and locked-device matrix remains open. |
 | 2026-08-08 | AgentSlate 0.2 public release | Source/Homebrew pass; TestFlight review submitted | PR #1 merged as `57adb031e62b5cfa896194be43f386ee9bdac473`; source and Pages CI passed; tag and latest release `v0.2.0` point to that merge. The source archive SHA-256 is `029b80d4d3a251a7e3dec990d9915f6dc9727a309b60332b5cf97f33ed57c81c`; tap CI passed on macOS 26, macOS 15 Intel, and Linux syntax; Homebrew 0.2.0 passed its formula test, restarted with preserved private state, passed `doctor`, and listens at `100.69.191.104:8765`. App Store-signed build `0.2.0 (5)` validated, retained `Internal Testers`, joined the existing `AgentSlate Beta` external group, preserved the public link, and was submitted only to TestFlight Beta App Review. Production `0.1.0` remains in Prepare for Submission. |
+| 2026-08-09 | AgentSlate 0.2 external TestFlight approval | Pass; reviewer installation pending | App Store Connect showed build `0.2.0 (5)` as `Testing` with 89 days remaining in the `AgentSlate Beta` external group. The public link remained enabled. Production `0.1.0` remained in Prepare for Submission and was not changed. |

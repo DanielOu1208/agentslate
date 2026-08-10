@@ -12,7 +12,7 @@
 </div>
 
 > [!NOTE]
-> TestFlight build `0.2.0 (5)` is awaiting Apple Beta App Review. The public link still offers the previously approved `0.1.0` beta; the new dictation release will appear there after Apple approves it.
+> TestFlight build `0.2.0 (5)` is approved and available to external testers through the public beta link.
 
 <p align="center">
   <img src="docs/assets/readme/dashboard.png" alt="AgentSlate offline demo showing five coding agents and the remote keypad" width="380">
