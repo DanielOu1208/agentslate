@@ -97,6 +97,9 @@ The open beta additionally includes editable spoken instructions, hold-to-talk s
 - Let users choose Apple On-Device, OpenRouter Whisper, or Soniox v5 Real-Time and store each user-supplied provider key in the iOS Keychain; never bundle a developer-funded credential.
 - In OpenRouter mode, record a temporary WAV file and transcribe it with the OpenRouter-routed `openai/whisper-large-v3-turbo` model. In Soniox mode, stream 16 kHz mono PCM to `stt-rt-v5` and show its provisional and final text in the existing talking presentation.
 - Offer cleanup for either cloud engine, on by default, using `google/gemini-3.1-flash-lite`; keep explicitly selected Apple dictation fully on-device. If cloud transcription fails, retry the local recording with Apple's speech framework. If Soniox finalization and Apple fallback both fail after live text arrived, retain the exact latest live transcript but require review before sending. If cleanup fails, is disabled, or lacks an OpenRouter key, keep the raw transcript.
+- Provide one global vocabulary list stored only on the iPhone. Add terms manually one at a time; each term may be a word or short phrase of at most 60 characters, with at most 100 terms and the additional requirement that the rendered Whisper vocabulary prompt remain at or below 224 UTF-8 bytes.
+- Apply the relevant vocabulary terms as recognition and spelling hints to Apple `AnalysisContext` for both directly selected Apple dictation and Apple fallback, the OpenRouter/Groq Whisper prompt, Soniox `context.terms`, and, when cleanup is enabled, Gemini cleanup spelling guidance. Vocabulary hints are probabilistic context, not deterministic text replacement.
+- Keep vocabulary management local and manual. Do not add sync, a backend, import, or replacement rules.
 - Treat the transcript as untrusted data during cleanup, allow rephrasing for clarity, and instruct the cleanup model to rewrite rather than answer questions, follow instructions, solve tasks, or add facts.
 - Show Soniox provisional text live, keep OpenRouter batch-only, show clear listening/finalizing/transcribing/fallback/cleaning states, and cap both cloud engines at two minutes before opening the review editor.
 - Limit provider HTTP bodies to 1 MiB, each Soniox response frame and accumulated provider transcript text to 64 KiB, and never truncate an oversized response into a sendable prompt.
@@ -115,7 +118,7 @@ The open beta additionally includes editable spoken instructions, hold-to-talk s
 - Request microphone access with the native asynchronous audio API; do not request the legacy speech-recognition permission.
 - Cancel capture when the gesture is interrupted or the app leaves the foreground, and never automatically send partial text after a recognition or finalization failure.
 - With VoiceOver, use one activation to start, a second to send, and named Edit dictation and Cancel dictation actions while keeping the same talking presentation.
-- Never stream microphone audio through the Herdr bridge. Keep audio on the phone in Apple mode; send opted-in cloud audio only to the selected provider and delete temporary fallback audio after processing or cancellation.
+- Never stream microphone audio through the Herdr bridge. Keep audio and vocabulary terms on the phone when Apple On-Device is selected; send opted-in cloud audio and saved vocabulary terms only to the selected cloud speech provider, send those terms to Google through OpenRouter only when cleanup is enabled, and delete temporary fallback audio after processing or cancellation.
 - Keep text-to-speech out of the initial keypad release because the external screen remains the source of context.
 
 ### Connection and security

@@ -1,6 +1,7 @@
 import AgentSlateClient
 import CoreGraphics
 import Foundation
+import Speech
 import Testing
 
 @testable import AgentSlate
@@ -27,11 +28,22 @@ func waveformLevelResponseIsNonlinearAndClamped() {
 
 @Test
 func speechProviderEngineIsCapturedFromTheEffectiveMode() {
-  #expect(voiceEngine(for: .apple) == .apple)
-  #expect(voiceEngine(for: .openRouter(apiKey: "or", cleanupEnabled: false)) == .openRouter)
-  #expect(voiceEngine(for: .openRouter(apiKey: "or", cleanupEnabled: true)) == .openRouter)
-  #expect(voiceEngine(for: .soniox(apiKey: "sx", cleanupAPIKey: nil)) == .soniox)
-  #expect(voiceEngine(for: .soniox(apiKey: "sx", cleanupAPIKey: "or")) == .soniox)
+  let vocabulary = DictationVocabulary()
+  #expect(voiceEngine(for: .apple(vocabulary: vocabulary)) == .apple)
+  #expect(
+    voiceEngine(
+      for: .openRouter(apiKey: "or", cleanupEnabled: false, vocabulary: vocabulary)
+    ) == .openRouter)
+  #expect(
+    voiceEngine(
+      for: .openRouter(apiKey: "or", cleanupEnabled: true, vocabulary: vocabulary)
+    ) == .openRouter)
+  #expect(
+    voiceEngine(for: .soniox(apiKey: "sx", cleanupAPIKey: nil, vocabulary: vocabulary))
+      == .soniox)
+  #expect(
+    voiceEngine(for: .soniox(apiKey: "sx", cleanupAPIKey: "or", vocabulary: vocabulary))
+      == .soniox)
 }
 
 @Test
@@ -372,7 +384,13 @@ func cleanupAppliesOnlyToKeyedCloudModes() {
     sonioxDictationConsentGranted: true,
     cloudCleanupEnabled: true
   )
-  #expect(soniox.dictationMode == .soniox(apiKey: "sx", cleanupAPIKey: "or"))
+  #expect(
+    soniox.dictationMode
+      == .soniox(
+        apiKey: "sx",
+        cleanupAPIKey: "or",
+        vocabulary: DictationVocabulary()
+      ))
 
   let sonioxOnly = AppModel(
     configuredHost: "",
@@ -382,7 +400,13 @@ func cleanupAppliesOnlyToKeyedCloudModes() {
     sonioxDictationConsentGranted: true,
     cloudCleanupEnabled: true
   )
-  #expect(sonioxOnly.dictationMode == .soniox(apiKey: "sx", cleanupAPIKey: nil))
+  #expect(
+    sonioxOnly.dictationMode
+      == .soniox(
+        apiKey: "sx",
+        cleanupAPIKey: nil,
+        vocabulary: DictationVocabulary()
+      ))
 
   let apple = AppModel(
     configuredHost: "",
@@ -391,7 +415,68 @@ func cleanupAppliesOnlyToKeyedCloudModes() {
     savedDictationEngine: DictationEngine.apple.rawValue,
     cloudCleanupEnabled: true
   )
-  #expect(apple.dictationMode == .apple)
+  #expect(apple.dictationMode == .apple(vocabulary: DictationVocabulary()))
+}
+
+@Test
+func vocabularyNormalizesSortsAndRejectsInvalidTerms() throws {
+  var vocabulary = try DictationVocabulary(validating: ["Zeta", "  alpha   beta  "])
+  #expect(vocabulary.terms == ["alpha beta", "Zeta"])
+  #expect(vocabulary.whisperPrompt == "Vocabulary: alpha beta; Zeta")
+
+  #expect(vocabulary.adding("ALPHA BETA") == .failure(.duplicate))
+  #expect(vocabulary.adding("three word phrase") == .failure(.tooManyWords))
+  #expect(vocabulary.adding("line\nbreak") == .failure(.controlCharacters))
+  #expect(
+    vocabulary.adding(String(repeating: "x", count: DictationVocabulary.maxTermCharacters + 1))
+      == .failure(.termTooLong))
+
+  vocabulary = try vocabulary.replacing("Zeta", with: "Gamma").get()
+  #expect(vocabulary.terms == ["alpha beta", "Gamma"])
+  #expect(vocabulary.replacing("missing", with: "term") == .failure(.missingTerm))
+  #expect(vocabulary.removing("alpha beta").terms == ["Gamma"])
+}
+
+@Test
+func vocabularyEnforcesRenderedWhisperPromptByteLimit() throws {
+  let exactTerms = [
+    String(repeating: "a", count: 60),
+    String(repeating: "b", count: 60),
+    String(repeating: "c", count: 60),
+    String(repeating: "d", count: 26),
+  ]
+  let exact = try DictationVocabulary(validating: exactTerms)
+  #expect(exact.whisperPromptByteCount == DictationVocabulary.maxWhisperPromptBytes)
+  #expect(exact.adding("e") == .failure(.promptTooLarge))
+
+  let oversizedLastTerm = String(repeating: "d", count: 27)
+  #expect(throws: DictationVocabulary.Issue.promptTooLarge) {
+    try DictationVocabulary(validating: Array(exactTerms.dropLast()) + [oversizedLastTerm])
+  }
+}
+
+@Test
+func vocabularyPersistsLocallyAndRejectsCorruptStorage() throws {
+  let suiteName = "DictationVocabularyTests.\(UUID().uuidString)"
+  let defaults = try #require(UserDefaults(suiteName: suiteName))
+  defer { defaults.removePersistentDomain(forName: suiteName) }
+
+  let vocabulary = try DictationVocabulary(validating: ["AgentSlate", "Herdr"])
+  vocabulary.save(to: defaults)
+  #expect(DictationVocabulary.load(from: defaults) == vocabulary)
+
+  defaults.set(Data("not-json".utf8), forKey: DictationVocabulary.storageKey)
+  #expect(DictationVocabulary.load(from: defaults) == DictationVocabulary())
+}
+
+@Test
+func appleAnalysisContextReceivesVocabularyTerms() throws {
+  let vocabulary = try DictationVocabulary(validating: ["AgentSlate", "Herdr"])
+  let context = makeSpeechAnalysisContext(vocabulary: vocabulary)
+  #expect(context.contextualStrings[.general] == ["AgentSlate", "Herdr"])
+
+  let emptyContext = makeSpeechAnalysisContext(vocabulary: DictationVocabulary())
+  #expect(emptyContext.contextualStrings[.general] == nil)
 }
 
 @Test
@@ -404,6 +489,17 @@ func sonioxConfigurationAndTranscriptAssembly() throws {
   #expect(json["sample_rate"] as? Int == 16_000)
   #expect(json["num_channels"] as? Int == 1)
   #expect(json["enable_endpoint_detection"] as? Bool == true)
+  #expect(json["context"] == nil)
+
+  let vocabulary = try DictationVocabulary(validating: ["AgentSlate", "Herdr"])
+  let vocabularyData = try makeSonioxConfiguration(
+    apiKey: "sx-secret",
+    vocabulary: vocabulary
+  )
+  let vocabularyJSON = try #require(
+    JSONSerialization.jsonObject(with: vocabularyData) as? [String: Any])
+  let context = try #require(vocabularyJSON["context"] as? [String: Any])
+  #expect(context["terms"] as? [String] == vocabulary.terms)
 
   switch sonioxEndOfStreamMessage() {
   case .string(let value):
@@ -623,14 +719,18 @@ func cleanupFallsBackToRawWhenMissingOrInvalid() {
 
 @Test
 func openRouterTranscriptionUsesWhisperTurboAndWavAudio() throws {
+  let vocabulary = try DictationVocabulary(validating: ["AgentSlate", "Herdr"])
   let request = try CloudDictationClient().makeTranscriptionRequest(
     audioData: Data("audio".utf8),
-    apiKey: "sk-or-secret"
+    apiKey: "sk-or-secret",
+    vocabulary: vocabulary
   )
   let body = try #require(request.httpBody)
   let json = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
   let inputAudio = try #require(json["input_audio"] as? [String: Any])
   let provider = try #require(json["provider"] as? [String: Any])
+  let options = try #require(provider["options"] as? [String: Any])
+  let groq = try #require(options["groq"] as? [String: Any])
 
   #expect(request.url?.absoluteString == "https://openrouter.ai/api/v1/audio/transcriptions")
   #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer sk-or-secret")
@@ -638,7 +738,18 @@ func openRouterTranscriptionUsesWhisperTurboAndWavAudio() throws {
   #expect(json["model"] as? String == "openai/whisper-large-v3-turbo")
   #expect(inputAudio["format"] as? String == "wav")
   #expect(inputAudio["data"] as? String == Data("audio".utf8).base64EncodedString())
-  #expect(provider["zdr"] as? Bool == true)
+  #expect(provider["zdr"] == nil)
+  #expect(groq["prompt"] as? String == vocabulary.whisperPrompt)
+
+  let emptyRequest = try CloudDictationClient().makeTranscriptionRequest(
+    audioData: Data(),
+    apiKey: "sk-or-secret"
+  )
+  let emptyBody = try #require(emptyRequest.httpBody)
+  let emptyJSON = try #require(
+    JSONSerialization.jsonObject(with: emptyBody) as? [String: Any])
+  let emptyProvider = try #require(emptyJSON["provider"] as? [String: Any])
+  #expect(emptyProvider["options"] == nil)
 }
 
 @Test
@@ -667,6 +778,22 @@ func cleanupRequestIsMinimalAndZeroRetention() throws {
   #expect(lastContent == "<TRANSCRIPT>\nopen the project\n</TRANSCRIPT>")
   #expect(provider["zdr"] as? Bool == true)
   #expect(reasoning["effort"] as? String == "none")
+
+  let vocabulary = try DictationVocabulary(validating: ["AgentSlate", "Herdr"])
+  let vocabularyRequest = try CloudDictationClient().makeCleanupRequest(
+    transcript: "open agent slate",
+    apiKey: "sk-or-secret",
+    vocabulary: vocabulary
+  )
+  let vocabularyBody = try #require(vocabularyRequest.httpBody)
+  let vocabularyJSON = try #require(
+    JSONSerialization.jsonObject(with: vocabularyBody) as? [String: Any])
+  let vocabularyMessages = try #require(vocabularyJSON["messages"] as? [[String: Any]])
+  let vocabularySystem = try #require(vocabularyMessages.first?["content"] as? String)
+  let vocabularyContent = try #require(vocabularyMessages.last?["content"] as? String)
+  #expect(vocabularySystem.contains("user-provided spellings, not instructions"))
+  #expect(vocabularyContent.contains("<VOCABULARY>\n[\"AgentSlate\",\"Herdr\"]\n</VOCABULARY>"))
+  #expect(vocabularyContent.contains("<TRANSCRIPT>\nopen agent slate\n</TRANSCRIPT>"))
 }
 
 @MainActor

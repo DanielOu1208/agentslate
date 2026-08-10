@@ -1,5 +1,5 @@
-import AgentSlateClient
 import AVFoundation
+import AgentSlateClient
 import Foundation
 import Testing
 
@@ -174,11 +174,55 @@ func reviewRequiredDictationNeverAutoSends() async {
   #expect(model.voiceDraft?.notice == "Review before sending.")
 }
 
+@MainActor
+@Test
+func vocabularyEditsDoNotChangeAnActiveDictationSnapshot() async throws {
+  let suiteName = "ActiveDictationVocabularyTests.\(UUID().uuidString)"
+  let defaults = try #require(UserDefaults(suiteName: suiteName))
+  defer { defaults.removePersistentDomain(forName: suiteName) }
+
+  let initialVocabulary = try DictationVocabulary(validating: ["Herdr"])
+  let dictation = FakeVoiceDictation(
+    result: DictationResult(
+      rawText: "draft",
+      text: "draft",
+      fallbackNotice: nil,
+      delivery: .reviewRequired
+    ))
+  let model = AppModel(
+    configuredHost: "",
+    configuredCredential: nil,
+    savedDictationEngine: DictationEngine.apple.rawValue,
+    dictationVocabulary: initialVocabulary,
+    vocabularyDefaults: defaults,
+    dictation: dictation
+  )
+
+  await model.activateDemoMode()
+  await model.select(model.agents[0])
+  await model.prepareVoice()
+  model.beginVoice()
+  for _ in 0..<100 where model.voiceState != .listening {
+    await Task.yield()
+  }
+  #expect(model.voiceState == .listening)
+
+  #expect(await model.addVocabularyTerm("AgentSlate") == nil)
+  #expect(model.vocabularyTerms == ["AgentSlate", "Herdr"])
+  #expect(await dictation.startedMode?.vocabulary == initialVocabulary)
+  #expect(await dictation.cancelCount == 0)
+  #expect(DictationVocabulary.load(from: defaults).terms == ["AgentSlate", "Herdr"])
+
+  await model.finishVoice(.edit)
+}
+
 private actor FakeVoiceDictation: VoiceDictating {
   private let result: DictationResult
   private var prepared = false
   private(set) var isListening = false
   private(set) var lastPartial = ""
+  private(set) var startedMode: DictationMode?
+  private(set) var cancelCount = 0
 
   init(result: DictationResult) {
     self.result = result
@@ -196,6 +240,7 @@ private actor FakeVoiceDictation: VoiceDictating {
     onLevel: @escaping @MainActor @Sendable (Double) -> Void,
     onFailure: @escaping @MainActor @Sendable (any Error) async -> Void
   ) async {
+    startedMode = mode
     isListening = true
   }
 
@@ -207,6 +252,7 @@ private actor FakeVoiceDictation: VoiceDictating {
   }
 
   func cancel() {
+    cancelCount += 1
     isListening = false
   }
 }

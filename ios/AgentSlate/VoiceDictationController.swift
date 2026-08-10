@@ -18,6 +18,16 @@ private func audioLevel(for buffer: AVAudioPCMBuffer) -> Double {
   return normalizedAudioLevel(decibels: rootMeanSquare > 0 ? 20 * log10(rootMeanSquare) : -50)
 }
 
+func makeSpeechAnalysisContext(
+  vocabulary: DictationVocabulary
+) -> AnalysisContext {
+  let context = AnalysisContext()
+  if !vocabulary.terms.isEmpty {
+    context.contextualStrings[.general] = vocabulary.terms
+  }
+  return context
+}
+
 /// Hold-to-talk dictation with optional user-funded cloud transcription and on-device fallback.
 actor VoiceDictationController {
   private enum CaptureState {
@@ -158,8 +168,8 @@ actor VoiceDictationController {
     try configureAudioSession()
 
     switch mode {
-    case .apple:
-      try await prepareAppleCapture()
+    case .apple(let vocabulary):
+      try await prepareAppleCapture(vocabulary: vocabulary)
     case .openRouter:
       try prepareCloudRecording()
     case .soniox:
@@ -187,7 +197,7 @@ actor VoiceDictationController {
     applePrepared = true
   }
 
-  private func prepareAppleCapture() async throws {
+  private func prepareAppleCapture(vocabulary: DictationVocabulary) async throws {
     guard transcriber == nil, analyzer == nil, analyzerFormat == nil else { return }
     try await prepareApple()
     guard let locale = preparedLocale else { throw Failure.localeNotSupported }
@@ -197,9 +207,14 @@ actor VoiceDictationController {
       modules: [transcriber],
       options: .init(priority: .userInitiated, modelRetention: .lingering)
     )
-    guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(
-      compatibleWith: [transcriber]
-    ) else {
+    if !vocabulary.terms.isEmpty {
+      try await analyzer.setContext(makeSpeechAnalysisContext(vocabulary: vocabulary))
+    }
+    guard
+      let format = await SpeechAnalyzer.bestAvailableAudioFormat(
+        compatibleWith: [transcriber]
+      )
+    else {
       throw Failure.audioSetupFailed
     }
     try await analyzer.prepareToAnalyze(in: format)
@@ -245,10 +260,14 @@ actor VoiceDictationController {
         throw Failure.audioSetupFailed
       }
       return
-    case .soniox(let apiKey, _):
+    case .soniox(let apiKey, _, let vocabulary):
       do {
         captureState = .listening(mode)
-        try startSonioxRecording(apiKey: apiKey, generation: generation)
+        try startSonioxRecording(
+          apiKey: apiKey,
+          vocabulary: vocabulary,
+          generation: generation
+        )
       } catch {
         discardRecording()
         finishSession(for: generation)
@@ -256,11 +275,11 @@ actor VoiceDictationController {
       }
       return
     case .apple:
-      try await startAppleCapture(generation: generation)
+      try await startAppleCapture(mode: mode, generation: generation)
     }
   }
 
-  private func startAppleCapture(generation: Int) async throws {
+  private func startAppleCapture(mode: DictationMode, generation: Int) async throws {
     guard let transcriber, let analyzer, analyzerFormat != nil else {
       finishSession(for: generation)
       throw Failure.audioSetupFailed
@@ -290,7 +309,7 @@ actor VoiceDictationController {
       throw Failure.audioSetupFailed
     }
 
-    captureState = .listening(.apple)
+    captureState = .listening(mode)
   }
 
   private func collectLiveResults(
@@ -334,17 +353,19 @@ actor VoiceDictationController {
     case .apple:
       let text = try await finalizeAppleCapture(generation: generation)
       return DictationResult(rawText: text, text: text, fallbackNotice: nil)
-    case .openRouter(let apiKey, let cleanupEnabled):
+    case .openRouter(let apiKey, let cleanupEnabled, let vocabulary):
       return try await finalizeOpenRouter(
         generation: generation,
         apiKey: apiKey,
         cleanupAPIKey: cleanupEnabled ? apiKey : nil,
+        vocabulary: vocabulary,
         onPhase: onPhase
       )
-    case .soniox(_, let cleanupAPIKey):
+    case .soniox(_, let cleanupAPIKey, let vocabulary):
       return try await finalizeSoniox(
         generation: generation,
         cleanupAPIKey: cleanupAPIKey,
+        vocabulary: vocabulary,
         onPhase: onPhase
       )
     }
@@ -379,6 +400,7 @@ actor VoiceDictationController {
     generation: Int,
     apiKey: String,
     cleanupAPIKey: String?,
+    vocabulary: DictationVocabulary,
     onPhase: @MainActor @Sendable (CloudDictationPhase) -> Void
   ) async throws -> DictationResult {
     stopMetering()
@@ -400,14 +422,15 @@ actor VoiceDictationController {
     do {
       rawText = try await cloudClient.transcribe(
         audioURL: recordingURL,
-        apiKey: apiKey
+        apiKey: apiKey,
+        vocabulary: vocabulary
       )
     } catch is CancellationError {
       throw CancellationError()
     } catch {
       await onPhase(.appleFallback)
       do {
-        rawText = try await transcribeAppleFile(recordingURL)
+        rawText = try await transcribeAppleFile(recordingURL, vocabulary: vocabulary)
         notice = "OpenRouter transcription unavailable; used Apple transcription."
       } catch is CancellationError {
         throw CancellationError()
@@ -420,6 +443,7 @@ actor VoiceDictationController {
     return try await finishCloudResult(
       rawText: rawText,
       cleanupAPIKey: cleanupAPIKey,
+      vocabulary: vocabulary,
       notice: notice,
       generation: generation,
       onPhase: onPhase
@@ -429,6 +453,7 @@ actor VoiceDictationController {
   private func finalizeSoniox(
     generation: Int,
     cleanupAPIKey: String?,
+    vocabulary: DictationVocabulary,
     onPhase: @MainActor @Sendable (CloudDictationPhase) -> Void
   ) async throws -> DictationResult {
     let sinkFailed = sonioxSink?.failed ?? true
@@ -460,7 +485,7 @@ actor VoiceDictationController {
     } catch let sonioxError {
       await onPhase(.appleFallback)
       do {
-        rawText = try await transcribeAppleFile(recordingURL)
+        rawText = try await transcribeAppleFile(recordingURL, vocabulary: vocabulary)
         notice = "Soniox unavailable; used Apple transcription."
       } catch is CancellationError {
         throw CancellationError()
@@ -488,6 +513,7 @@ actor VoiceDictationController {
     return try await finishCloudResult(
       rawText: rawText,
       cleanupAPIKey: cleanupAPIKey,
+      vocabulary: vocabulary,
       notice: notice,
       generation: generation,
       onPhase: onPhase
@@ -497,6 +523,7 @@ actor VoiceDictationController {
   private func finishCloudResult(
     rawText: String,
     cleanupAPIKey: String?,
+    vocabulary: DictationVocabulary,
     notice: String?,
     generation: Int,
     onPhase: @MainActor @Sendable (CloudDictationPhase) -> Void
@@ -512,7 +539,8 @@ actor VoiceDictationController {
       await onPhase(.cleaning)
       let cleanedText = try? await cloudClient.cleanup(
         transcript: rawText,
-        apiKey: cleanupAPIKey
+        apiKey: cleanupAPIKey,
+        vocabulary: vocabulary
       )
       try Task.checkCancellation()
       guard generation == sessionGeneration, !cancellationRequested else {
@@ -683,7 +711,11 @@ actor VoiceDictationController {
     recordingURL = url
   }
 
-  private func startSonioxRecording(apiKey: String, generation: Int) throws {
+  private func startSonioxRecording(
+    apiKey: String,
+    vocabulary: DictationVocabulary,
+    generation: Int
+  ) throws {
     guard let sonioxFile, let sonioxFormat, recordingURL != nil else {
       throw Failure.audioSetupFailed
     }
@@ -694,6 +726,7 @@ actor VoiceDictationController {
       guard let self else { throw CancellationError() }
       return try await self.sonioxClient.transcribe(
         apiKey: apiKey,
+        vocabulary: vocabulary,
         audio: audio,
         onPartial: { [weak self] text in
           await self?.receiveSonioxPartial(text, generation: generation)
@@ -759,7 +792,10 @@ actor VoiceDictationController {
     }
   }
 
-  private func transcribeAppleFile(_ url: URL) async throws -> String {
+  private func transcribeAppleFile(
+    _ url: URL,
+    vocabulary: DictationVocabulary
+  ) async throws -> String {
     try await prepareApple()
     guard let locale = preparedLocale else { throw Failure.localeNotSupported }
     let transcriber = makeTranscriber(locale: locale, reportsVolatileResults: false)
@@ -767,6 +803,9 @@ actor VoiceDictationController {
       modules: [transcriber],
       options: .init(priority: .userInitiated, modelRetention: .lingering)
     )
+    if !vocabulary.terms.isEmpty {
+      try await analyzer.setContext(makeSpeechAnalysisContext(vocabulary: vocabulary))
+    }
     let file = try AVAudioFile(forReading: url)
 
     async let collectedText = collectResults(from: transcriber)

@@ -1,9 +1,16 @@
 import Foundation
 
-func makeSonioxConfiguration(apiKey: String) throws -> Data {
+func makeSonioxConfiguration(
+  apiKey: String,
+  vocabulary: DictationVocabulary = DictationVocabulary()
+) throws -> Data {
   let apiKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
   guard !apiKey.isEmpty else { throw SonioxRealtimeClient.Failure.missingAPIKey }
-  return try JSONEncoder().encode(SonioxConfiguration(apiKey: apiKey))
+  return try JSONEncoder().encode(
+    SonioxConfiguration(
+      apiKey: apiKey,
+      context: vocabulary.terms.isEmpty ? nil : SonioxContext(terms: vocabulary.terms)
+    ))
 }
 
 func sonioxEndOfStreamMessage() -> URLSessionWebSocketTask.Message {
@@ -114,10 +121,11 @@ struct SonioxRealtimeClient: Sendable {
 
   func transcribe(
     apiKey: String,
+    vocabulary: DictationVocabulary = DictationVocabulary(),
     audio: AsyncStream<Data>,
     onPartial: @escaping @Sendable (String) async -> Void
   ) async throws -> String {
-    let configuration = try makeSonioxConfiguration(apiKey: apiKey)
+    let configuration = try makeSonioxConfiguration(apiKey: apiKey, vocabulary: vocabulary)
     var request = URLRequest(url: Self.endpoint)
     request.timeoutInterval = 15
     let socket = makeWebSocketTask(request)
@@ -256,6 +264,7 @@ struct SonioxRealtimeClient: Sendable {
 
 private struct SonioxConfiguration: Encodable {
   let apiKey: String
+  let context: SonioxContext?
   let model = "stt-rt-v5"
   let audioFormat = "pcm_s16le"
   let sampleRate = 16_000
@@ -264,12 +273,17 @@ private struct SonioxConfiguration: Encodable {
 
   enum CodingKeys: String, CodingKey {
     case apiKey = "api_key"
+    case context
     case model
     case audioFormat = "audio_format"
     case sampleRate = "sample_rate"
     case numChannels = "num_channels"
     case enableEndpointDetection = "enable_endpoint_detection"
   }
+}
+
+private struct SonioxContext: Encodable {
+  let terms: [String]
 }
 
 private struct SonioxResponse: Decodable {

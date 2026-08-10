@@ -1,5 +1,5 @@
-import Foundation
 import AgentSlateClient
+import Foundation
 import Observation
 import UIKit
 
@@ -28,6 +28,7 @@ final class AppModel {
   private(set) var dictationCredentials: DictationCredentials?
   private(set) var dictationEngine: DictationEngine
   private(set) var cloudCleanupEnabled: Bool
+  private(set) var dictationVocabulary: DictationVocabulary
 
   @ObservationIgnored private var client: BridgeClient?
   @ObservationIgnored private var eventTask: Task<Void, Never>?
@@ -37,6 +38,7 @@ final class AppModel {
   @ObservationIgnored private var availabilityBySession: [String: HerdrAvailability] = [:]
   @ObservationIgnored private var errorsBySession: [String: BridgeError] = [:]
   @ObservationIgnored private var displayedSessionError: BridgeError?
+  @ObservationIgnored private let vocabularyDefaults: UserDefaults
 
   init(
     configuredHost: String = UserDefaults.standard.string(forKey: "bridgeHost") ?? "",
@@ -52,6 +54,8 @@ final class AppModel {
       forKey: "sonioxDictationConsentGranted"),
     cloudCleanupEnabled: Bool? = UserDefaults.standard.object(
       forKey: "cloudCleanupEnabled") as? Bool,
+    dictationVocabulary: DictationVocabulary = DictationVocabulary.load(),
+    vocabularyDefaults: UserDefaults = .standard,
     dictation: any VoiceDictating = VoiceDictationController()
   ) {
     self.configuredHost = configuredHost
@@ -59,6 +63,8 @@ final class AppModel {
     self.selectedSessionName = selectedSessionName
     self.dictationCredentials = dictationCredentials
     self.voiceSession = VoiceSessionCoordinator(dictation: dictation)
+    self.dictationVocabulary = dictationVocabulary
+    self.vocabularyDefaults = vocabularyDefaults
     let resolvedEngine = resolveDictationEngine(
       savedValue: savedDictationEngine,
       legacyCloudEnabled: legacyCloudDictationEnabled,
@@ -134,19 +140,32 @@ final class AppModel {
   var hasOpenRouterAPIKey: Bool { dictationCredentials?.hasOpenRouterKey == true }
   var hasSonioxAPIKey: Bool { dictationCredentials?.hasSonioxKey == true }
   var effectiveCloudCleanupEnabled: Bool { cloudCleanupEnabled && hasOpenRouterAPIKey }
+  var vocabularyTerms: [String] { dictationVocabulary.terms }
 
   var dictationMode: DictationMode {
     switch dictationEngine {
     case .apple:
-      return .apple
+      return .apple(vocabulary: dictationVocabulary)
     case .openRouter:
-      guard let key = dictationCredentials?.openRouterAPIKey, !key.isEmpty else { return .apple }
-      return .openRouter(apiKey: key, cleanupEnabled: effectiveCloudCleanupEnabled)
+      guard let key = dictationCredentials?.openRouterAPIKey, !key.isEmpty else {
+        return .apple(vocabulary: dictationVocabulary)
+      }
+      return .openRouter(
+        apiKey: key,
+        cleanupEnabled: effectiveCloudCleanupEnabled,
+        vocabulary: dictationVocabulary
+      )
     case .soniox:
-      guard let key = dictationCredentials?.sonioxAPIKey, !key.isEmpty else { return .apple }
+      guard let key = dictationCredentials?.sonioxAPIKey, !key.isEmpty else {
+        return .apple(vocabulary: dictationVocabulary)
+      }
       let cleanupKey =
         effectiveCloudCleanupEnabled ? dictationCredentials?.openRouterAPIKey : nil
-      return .soniox(apiKey: key, cleanupAPIKey: cleanupKey)
+      return .soniox(
+        apiKey: key,
+        cleanupAPIKey: cleanupKey,
+        vocabulary: dictationVocabulary
+      )
     }
   }
 
@@ -446,6 +465,48 @@ final class AppModel {
     voiceState = .notPrepared
     partialTranscript = ""
     if canSend { await prepareVoice() }
+  }
+
+  func addVocabularyTerm(_ term: String) async -> DictationVocabulary.Issue? {
+    switch dictationVocabulary.adding(term) {
+    case .success(let vocabulary):
+      await applyVocabulary(vocabulary)
+      return nil
+    case .failure(let issue):
+      return issue
+    }
+  }
+
+  func updateVocabularyTerm(
+    _ existingTerm: String,
+    to newTerm: String
+  ) async -> DictationVocabulary.Issue? {
+    switch dictationVocabulary.replacing(existingTerm, with: newTerm) {
+    case .success(let vocabulary):
+      await applyVocabulary(vocabulary)
+      return nil
+    case .failure(let issue):
+      return issue
+    }
+  }
+
+  func deleteVocabularyTerm(_ term: String) async {
+    guard dictationVocabulary.terms.contains(term) else { return }
+    await applyVocabulary(dictationVocabulary.removing(term))
+  }
+
+  private func applyVocabulary(_ vocabulary: DictationVocabulary) async {
+    let sessionIsActive =
+      voiceState == .starting || voiceState == .listening || voiceState == .finalizing
+      || voiceState == .transcribing || voiceState == .appleFallback || voiceState == .cleaning
+    if !sessionIsActive {
+      await cancelVoice()
+    }
+    dictationVocabulary = vocabulary
+    vocabulary.save(to: vocabularyDefaults)
+    if !sessionIsActive, canSend {
+      await prepareVoice()
+    }
   }
 
   func removeOpenRouterAPIKey() async {
