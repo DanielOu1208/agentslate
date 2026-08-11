@@ -1,6 +1,6 @@
 # AgentSlate Implementation Tracker
 
-Last updated: 2026-08-09
+Last updated: 2026-08-10
 Allowed states: `Not started`, `In progress`, `Blocked`, `Done`
 
 A task is `Done` only when its acceptance evidence is recorded here. A phase is `Done` only when every exit criterion passes.
@@ -12,7 +12,7 @@ A task is `Done` only when its acceptance evidence is recorded here. A phase is 
 | 0. Herdr API validation | Done | Herdr 0.8.0/protocol 19 schema and real binary accepted by the bridge |
 | 1. Rust connector vertical slice | Done | Local and Tailscale acceptance checks passed |
 | 2. SwiftUI dashboard and keypad | In progress | SwiftUI dashboard and keypad simulator-verified; physical iPhone acceptance pending |
-| 3. Typed and voice interaction | In progress | Apple and optional cloud dictation pipelines are automated-test verified; full physical speech and fallback acceptance remain open |
+| 3. Typed and voice interaction | In progress | Apple, optional cloud dictation, and local vocabulary hints are automated-test verified; full physical speech/provider acceptance remains open |
 | 4. Pairing and lifecycle | In progress | Protocol v3 Mac and Swift foundations implemented; iPhone onboarding/Forget Bridge acceptance pending |
 | 5. Hardening | Not started | Starts after daily-use validation |
 | 6. Release staging | In progress | Source and Homebrew 0.2.0 are live; TestFlight build 5 is approved and testing externally, with reviewer installation pending |
@@ -103,7 +103,14 @@ Exit criterion: command approvals and question pickers can be completed from the
 - [x] Show a flat live speech waveform and one compact pill naming only the current transcription or cleanup provider.
 - [x] Clear transient keypad transcription information after a successful voice send while retaining it after failures.
 - [x] Mark every voice-originated prompt so the selected agent can resolve obvious phonetic project-name errors and clarify ambiguous terms.
+- [x] Add one global iPhone-local vocabulary list with manual one-term-at-a-time entry and deletion; do not add sync, a backend, import, or replacement rules.
+- [x] Accept words and short phrases up to 60 characters, cap the list at 100 terms, and reject additions that would make the rendered Whisper vocabulary prompt exceed 224 UTF-8 bytes.
+- [x] Apply vocabulary hints to Apple `AnalysisContext` in selected and fallback modes, the OpenRouter/Groq Whisper prompt, Soniox `context.terms`, and optional Gemini cleanup spelling guidance.
+- [x] Explain in the vocabulary UI that hints improve recognition probabilistically and do not deterministically replace transcript text.
+- [x] Extend cloud consent so saved vocabulary terms are disclosed as sent to the selected cloud speech provider and, when cleanup is enabled, to Google through OpenRouter; keep explicitly selected Apple mode on-device.
 - [ ] Verify OpenRouter and Soniox transcription, live Soniox text, cleanup on/off, two-minute cutoff, Apple fallback, key removal, and interruption handling on a physical iPhone.
+- [x] Verify vocabulary limits, local persistence, provider request mapping, Apple context construction, and active-session snapshot behavior through automated tests.
+- [ ] Owner-verify vocabulary behavior with Apple, OpenRouter/Groq, Soniox, Apple fallback, and Gemini cleanup on a physical iPhone using live provider accounts.
 
 Exit criterion: typed and spoken instructions reach the selected agent through the chosen dictation mode, with explicit cloud opt-in and reliable fallbacks.
 
@@ -269,3 +276,4 @@ Exit criterion: the external TestFlight build is approved and installed, public 
 | 2026-08-08 | Protected Whisper recording regression | Build pass; owner manual smoke pass | The OpenRouter recorder now creates its empty WAV before applying complete file protection and still applies protection before recording microphone audio. A generic iOS Simulator build and `git diff --check` passed; CoreSimulator failed to launch runtime tests with an infrastructure `Busy`/data-migration error. The owner then reported the physical dictation flow working well. The full fallback, interruption, cutoff, haptic, latency, and locked-device matrix remains open. |
 | 2026-08-08 | AgentSlate 0.2 public release | Source/Homebrew pass; TestFlight review submitted | PR #1 merged as `57adb031e62b5cfa896194be43f386ee9bdac473`; source and Pages CI passed; tag and latest release `v0.2.0` point to that merge. The source archive SHA-256 is `029b80d4d3a251a7e3dec990d9915f6dc9727a309b60332b5cf97f33ed57c81c`; tap CI passed on macOS 26, macOS 15 Intel, and Linux syntax; Homebrew 0.2.0 passed its formula test, restarted with preserved private state, passed `doctor`, and listens at `100.69.191.104:8765`. App Store-signed build `0.2.0 (5)` validated, retained `Internal Testers`, joined the existing `AgentSlate Beta` external group, preserved the public link, and was submitted only to TestFlight Beta App Review. Production `0.1.0` remains in Prepare for Submission. |
 | 2026-08-09 | AgentSlate 0.2 external TestFlight approval | Pass; reviewer installation pending | App Store Connect showed build `0.2.0 (5)` as `Testing` with 89 days remaining in the `AgentSlate Beta` external group. The public link remained enabled. Production `0.1.0` remained in Prepare for Submission and was not changed. |
+| 2026-08-10 | Local vocabulary hints | Automated pass; owner physical provider testing pending | Implemented one manual iPhone-local list with validation, persistence, inline Settings management, immutable active-session snapshots, Apple selected/fallback context, OpenRouter/Groq and Soniox request hints, Gemini spelling guidance, and updated consent/privacy copy. Current OpenRouter transcription guidance confirms `provider.options.groq.prompt` but not per-request data-policy enforcement on that endpoint, so the transcription request no longer sends or promises `provider.zdr`; Gemini cleanup still requires it. The iPhone 17 Pro simulator passed all 40 tests; generic Release analysis and unsigned Release build passed; `git diff --check` passed. Live Apple/OpenRouter/Groq/Soniox/Gemini behavior and the physical Settings interaction remain owner acceptance work. |

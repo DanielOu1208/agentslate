@@ -134,6 +134,10 @@ struct SettingsView: View {
   @State private var pendingDictationEngine: DictationEngine?
   @State private var showingCloudConsent = false
   @State private var showingForgetConfirmation = false
+  @State private var vocabularyInput = ""
+  @State private var vocabularyError: String?
+  @State private var editingVocabulary: VocabularyEditDraft?
+  @State private var isAddingVocabulary = false
   @State private var notice: SettingsNotice?
 
   init(model: AppModel) {
@@ -288,6 +292,53 @@ struct SettingsView: View {
           Text(consentMessage)
         }
 
+        Section {
+          HStack {
+            TextField("Word or short phrase", text: $vocabularyInput)
+              .textInputAutocapitalization(.never)
+              .autocorrectionDisabled()
+              .onSubmit(addVocabularyTerm)
+              .onChange(of: vocabularyInput) { _, _ in vocabularyError = nil }
+
+            Button("Add", action: addVocabularyTerm)
+              .disabled(
+                isAddingVocabulary
+                  || vocabularyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+              )
+          }
+
+          if let vocabularyError {
+            Label(vocabularyError, systemImage: "exclamationmark.triangle.fill")
+              .font(.footnote)
+              .foregroundStyle(Palette.blocked)
+          }
+
+          ForEach(model.vocabularyTerms, id: \.self) { term in
+            Button {
+              editingVocabulary = VocabularyEditDraft(term: term)
+            } label: {
+              HStack {
+                Text(term)
+                  .foregroundStyle(.primary)
+                Spacer()
+                Image(systemName: "pencil")
+                  .foregroundStyle(Palette.secondaryText)
+              }
+            }
+            .swipeActions {
+              Button("Delete", role: .destructive) {
+                Task { await model.deleteVocabularyTerm(term) }
+              }
+            }
+          }
+        } header: {
+          Text("Dictionary")
+        } footer: {
+          Text(
+            "\(model.vocabularyTerms.count) of 100 terms. Short vocabulary hints improve recognition but cannot guarantee it. Terms stay on this iPhone in Apple mode; selected cloud transcription and cleanup providers receive them."
+          )
+        }
+
         Section("Offline Preview") {
           Button {
             Task {
@@ -393,6 +444,28 @@ struct SettingsView: View {
         dismissButton: .default(Text("OK"))
       )
     }
+    .sheet(item: $editingVocabulary) { draft in
+      VocabularyEditSheet(term: draft.term) { newTerm in
+        await model.updateVocabularyTerm(draft.term, to: newTerm)
+      }
+      .presentationDetents([.medium])
+    }
+  }
+
+  private func addVocabularyTerm() {
+    guard !isAddingVocabulary else { return }
+    isAddingVocabulary = true
+    vocabularyError = nil
+    let term = vocabularyInput
+    Task {
+      let issue = await model.addVocabularyTerm(term)
+      isAddingVocabulary = false
+      if let issue {
+        vocabularyError = issue.localizedDescription
+      } else {
+        vocabularyInput = ""
+      }
+    }
   }
 
   private func selectDictationEngine(_ engine: DictationEngine) {
@@ -412,12 +485,12 @@ struct SettingsView: View {
   private var consentMessage: String {
     switch pendingDictationEngine {
     case .openRouter:
-      "Microphone audio will be sent through OpenRouter for Whisper transcription. "
-        + "When cleanup is enabled, the transcript is sent through OpenRouter to Google. "
-        + "Both requests require Zero Data Retention routing."
+      "Microphone audio and saved vocabulary terms will be sent through OpenRouter for Whisper transcription. "
+        + "When cleanup is enabled, the transcript and vocabulary terms are sent through OpenRouter to Google. "
+        + "The cleanup request requires Zero Data Retention routing."
     case .soniox:
-      "Live microphone audio will be sent directly to Soniox. When cleanup is enabled, "
-        + "the transcript is also sent through OpenRouter to Google."
+      "Live microphone audio and saved vocabulary terms will be sent directly to Soniox. When cleanup is enabled, "
+        + "the transcript and vocabulary terms are also sent through OpenRouter to Google."
     case .apple, nil:
       "Apple dictation stays on this iPhone."
     }
@@ -428,6 +501,80 @@ struct SettingsView: View {
     let version = info?["CFBundleShortVersionString"] as? String ?? "0.2.0"
     let build = info?["CFBundleVersion"] as? String ?? "5"
     return "\(version) (\(build))"
+  }
+}
+
+private struct VocabularyEditDraft: Identifiable {
+  let term: String
+  var id: String { term }
+}
+
+private struct VocabularyEditSheet: View {
+  let save: (String) async -> DictationVocabulary.Issue?
+
+  @Environment(\.dismiss) private var dismiss
+  @State private var text: String
+  @State private var errorMessage: String?
+  @State private var isSaving = false
+
+  init(
+    term: String,
+    save: @escaping (String) async -> DictationVocabulary.Issue?
+  ) {
+    self.save = save
+    _text = State(initialValue: term)
+  }
+
+  var body: some View {
+    NavigationStack {
+      Form {
+        Section {
+          TextField("Word or short phrase", text: $text)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .onSubmit(saveTerm)
+            .onChange(of: text) { _, _ in errorMessage = nil }
+
+          if let errorMessage {
+            Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+              .font(.footnote)
+              .foregroundStyle(Palette.blocked)
+          }
+        } footer: {
+          Text("Use one or two words with the exact spelling and capitalization you want.")
+        }
+      }
+      .scrollContentBackground(.hidden)
+      .background(Palette.canvas)
+      .navigationTitle("Edit vocabulary")
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Cancel") { dismiss() }
+        }
+        ToolbarItem(placement: .confirmationAction) {
+          Button("Save", action: saveTerm)
+            .disabled(
+              isSaving || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            )
+        }
+      }
+    }
+  }
+
+  private func saveTerm() {
+    guard !isSaving else { return }
+    isSaving = true
+    errorMessage = nil
+    Task {
+      let issue = await save(text)
+      isSaving = false
+      if let issue {
+        errorMessage = issue.localizedDescription
+      } else {
+        dismiss()
+      }
+    }
   }
 }
 
